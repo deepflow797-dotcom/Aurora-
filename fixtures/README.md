@@ -9,5 +9,10 @@ scanner tests.
   `estimate_word_timing` at load. Mixed Arabic/English on purpose: it exercises
   BiDi ordering and Arabic shaping, which is the Phase 0 acceptance test.
 
-The file name carries a `NN - ` prefix and `[Demo]` bracket so the
+- `music/00 - Fixture Tone.wav` — the one real audio file here: 0.05 s of 440 Hz
+  at −12 dBFS, 48 kHz mono, 16-bit PCM (4.8 kB). `aurora --decode` and the
+  decoder tests use it; expected values are peak `0.25`, RMS `0.1768`, 2400
+  frames.
+
+The file names carry a `NN - ` prefix and `[Demo]` bracket so the
 `FileNameProbe` heuristics (track number, qualifier stripping) are covered too.

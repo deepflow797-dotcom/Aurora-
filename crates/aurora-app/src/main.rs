@@ -11,6 +11,7 @@
 //! test to use on a new machine.
 
 mod cli;
+mod decode;
 mod demo;
 mod headless;
 mod shell;
@@ -49,6 +50,47 @@ fn run(args: cli::Args) -> ExitCode {
         level = %logging::level_from_env(),
         "starting"
     );
+
+    if let Some(path) = args.decode.clone() {
+        return match decode::inspect(&path) {
+            Ok(summary) => {
+                println!("{}", path.display());
+                println!(
+                    "  {} Hz, {} channel(s), {}-bit {}",
+                    summary.format.sample_rate,
+                    summary.format.channels,
+                    summary.format.bits_per_sample,
+                    if summary.format.is_float {
+                        "float"
+                    } else {
+                        "integer PCM"
+                    }
+                );
+                println!(
+                    "  {} frames, {:.3} s",
+                    summary.frames,
+                    summary.duration.as_secs_f64()
+                );
+                println!(
+                    "  peak {:.4} ({:.1} dBFS), rms {:.4}{}",
+                    summary.peak,
+                    summary.peak_dbfs(),
+                    summary.rms,
+                    if summary.is_silent() {
+                        " - file is silent"
+                    } else {
+                        ""
+                    }
+                );
+                ExitCode::SUCCESS
+            }
+            Err(err) => {
+                error!(%err, "decode failed");
+                eprintln!("aurora --decode: {err}");
+                ExitCode::FAILURE
+            }
+        };
+    }
 
     if args.demo {
         return match demo::run(args.demo_root.clone()) {

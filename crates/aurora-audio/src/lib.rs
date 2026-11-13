@@ -13,6 +13,10 @@
 //! The decoder never owns the position; the device does. That is what keeps the
 //! lyrics in sync on a machine with a 512-frame PipeWire quantum.
 
+pub mod wav;
+
+pub use wav::{DecodeError, Decoder, Format, WavDecoder};
+
 use std::time::Duration;
 
 use aurora_core::traits::AudioOutput;

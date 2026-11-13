@@ -243,3 +243,51 @@ Run `cargo run -p aurora-app` on the Fedora/Wayland machine (window sanity) and
 `spikes/ui-spike`'s two candidate commands there (the 60 FPS claim), then Phase 2:
 decoding (`symphonia`) and output (`cpal`) behind `AudioOutput`, with the clock
 driven by the device counter.
+
+---
+
+## Phase 2 (partial) — decoder seam + WAV (2026-11-13)
+
+Phase 2 proper is "decode + output". Output cannot be built here — there is no
+ALSA/PipeWire, no `pkg-config`, and `cpal` needs `alsa-sys` — so this entry covers
+the half that can be built and *verified*: the decoder side of the boundary.
+
+### Delivered
+
+- **`aurora-audio::wav`** — a dependency-free RIFF/WAVE decoder:
+  `Decoder` trait (`format`, `total_samples`, `read`), `Format`, and
+  `WavDecoder` for PCM 8/16/24/32-bit, IEEE float 32/64, any channel count, plus
+  `WAVE_FORMAT_EXTENSIBLE`. Chunk walking handles word alignment (odd-sized
+  chunks), `fmt ` after `data`, and streamed files whose `data` size is
+  `0`/`0xFFFFFFFF`. ADPCM/µ-law/compressed WAV are rejected by name, not guessed
+  at. RF64 (>4 GiB) is not supported.
+- **`aurora --decode <FILE>`** — decodes a whole file in 4096-sample blocks and
+  prints rate/channels/bit depth, frames, duration, peak (dBFS) and RMS; silent
+  files say so.
+- **`fixtures/music/00 - Fixture Tone.wav`** — 0.05 s of 440 Hz at −12 dBFS,
+  48 kHz mono, so the decoder has a real file to prove itself on (4.8 kB).
+
+### Measured here
+
+```text
+$ cargo run -q -p aurora-app -- --decode fixtures/music/00\ -\ Fixture\ Tone.wav
+fixtures/music/00 - Fixture Tone.wav
+  48000 Hz, 1 channel(s), 16-bit integer PCM
+  2400 frames, 0.050 s
+  peak 0.2500 (-12.0 dBFS), rms 0.1768
+```
+
+`cargo test --workspace` is now **85 tests**, clippy `-D warnings` clean.
+`aurora-audio` grew from 1 test to 10: 16/24/32-bit decode, float decode,
+extensible headers, odd chunk padding, non-RIFF rejection, unsupported format
+naming, missing file, and partial reads walking to EOF.
+
+### Not done / not verified
+
+- **No output device**: `NullOutput` is still the only `AudioOutput`. The clock
+  is not yet driven by a real device counter.
+- **No FLAC/ALAC/MP3/AAC/Opus/Vorbis**: those need `symphonia`, which is not in
+  the offline mirror. Vendoring it is the next blocker; the `Decoder` trait is
+  the seam it will plug into.
+- **No sample-rate conversion or channel mapping**: the decoder reports what the
+  file contains; negotiating with a device at a different rate is output-side work.
