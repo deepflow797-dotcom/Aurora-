@@ -56,7 +56,7 @@ cargo clippy --all-targets -- -D warnings
 cargo run -p aurora-app                 # the shell window (headless without Wayland)
 cargo run -p aurora-app -- --headless   # settings + library scan, no window
 cargo run -p aurora-app -- --demo       # Phase 0 pipeline over fixtures/
-cargo run -p aurora-app -- --decode fixtures/music/00\ -\ Fixture\ Tone.wav
+cargo run -p aurora-app -- --decode "fixtures/music/00 - Fixture Steps.flac"
 ```
 
 ## Settings
@@ -79,9 +79,10 @@ Logging goes to stderr at `AURORA_LOG` level (`error|warn|info|debug|trace`);
   measured faster than egui on the same scene. Built Wayland-only offline: the
   X11 backend needs a `ctor` release that cannot be vendored here (see
   `scripts/README.md`).
-- **Audio:** Symphonia (decode) + CPAL (output) behind `AudioOutput`. Today only
-  the decoder seam and a dependency-free WAV decoder exist (`aurora --decode`);
-  Symphonia and CPAL cannot be fetched in this sandbox (see `PHASE_LOG.md`).
+- **Audio:** Symphonia (FLAC/MP3/AAC/ALAC/CAF) plus an in-crate WAV decoder,
+  behind one `Decoder` trait; CPAL for output is still missing (no ALSA in this
+  sandbox). `aurora --decode <file>` decodes a file today. AIFF is not supported
+  yet: `symphonia-format-riff` needs a crate that cannot be vendored here.
 - **Database:** SQLite via `rusqlite` (bundled), FTS5 for search.
 - **Tags:** `lofty` (pure Rust).
 - **Lyrics:** in-repo parsers — plain LRC, enhanced LRC, internal JSON; TTML

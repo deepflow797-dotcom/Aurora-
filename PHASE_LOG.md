@@ -246,48 +246,73 @@ driven by the device counter.
 
 ---
 
-## Phase 2 (partial) — decoder seam + WAV (2026-11-13)
+## Phase 2 (partial) — decoders: WAV, FLAC, MP3, AAC, ALAC (2026-11-13)
 
-Phase 2 proper is "decode + output". Output cannot be built here — there is no
+Phase 2 proper is "decode + output". Output cannot be built here — no
 ALSA/PipeWire, no `pkg-config`, and `cpal` needs `alsa-sys` — so this entry covers
-the half that can be built and *verified*: the decoder side of the boundary.
+the half that can be built and *verified*: decoding.
 
 ### Delivered
 
-- **`aurora-audio::wav`** — a dependency-free RIFF/WAVE decoder:
-  `Decoder` trait (`format`, `total_samples`, `read`), `Format`, and
-  `WavDecoder` for PCM 8/16/24/32-bit, IEEE float 32/64, any channel count, plus
-  `WAVE_FORMAT_EXTENSIBLE`. Chunk walking handles word alignment (odd-sized
-  chunks), `fmt ` after `data`, and streamed files whose `data` size is
-  `0`/`0xFFFFFFFF`. ADPCM/µ-law/compressed WAV are rejected by name, not guessed
-  at. RF64 (>4 GiB) is not supported.
-- **`aurora --decode <FILE>`** — decodes a whole file in 4096-sample blocks and
-  prints rate/channels/bit depth, frames, duration, peak (dBFS) and RMS; silent
-  files say so.
-- **`fixtures/music/00 - Fixture Tone.wav`** — 0.05 s of 440 Hz at −12 dBFS,
-  48 kHz mono, so the decoder has a real file to prove itself on (4.8 kB).
+- **`aurora-audio::wav`** — a dependency-free RIFF/WAVE decoder: PCM 8/16/24/32,
+  IEEE float 32/64, any channel count, `WAVE_FORMAT_EXTENSIBLE`, word-aligned
+  chunks (odd sizes), `fmt ` after `data`, streamed `data` sizes. ADPCM/µ-law/
+  compressed WAV are rejected by name. RF64 (>4 GiB) is not supported.
+- **`aurora-audio::symphonia_decoder`** — `symphonia` 0.5.5 behind the same
+  [`Decoder`] trait: FLAC, MP3, AAC, ALAC, CAF and M4A/MP4 containers. Packets
+  are copied out as interleaved `f32`; a damaged packet is skipped instead of
+  aborting playback (one corrupt frame should not end a track).
+- **`aurora_audio::open(path)`** picks the decoder from the extension, and
+  refuses unknown extensions by name instead of guessing.
+- **`aurora --decode <FILE>`** decodes a whole file in 4096-sample blocks and
+  prints rate/channels/bit depth, frames, duration, peak (dBFS) and RMS.
+- **`fixtures/music/`**: `00 - Fixture Tone.wav` (0.05 s, −12 dBFS, 48 kHz mono,
+  4.8 kB, written by the fixture script) and `00 - Fixture Steps.flac`
+  (8192 frames: 4096 at 0.25 full scale, 4096 silent; 64 bytes).
+
+### Getting `symphonia` offline
+
+The mirror has no `symphonia`, so the whole workspace (22 crates) is vendored from
+`pdeljanov/Symphonia` at tag `v0.5.5`; the vendoring script picks the right
+subdirectory per crate name. Two things had to give:
+
+- **`wav`/`aiff` features are off.** They pull `symphonia-format-riff`, which
+  depends on the `extended` crate; that crate has no obtainable source here
+  (GitHub 404 on every plausible repo), so WAV stays on the in-crate decoder and
+  **AIFF is not supported yet**.
+- **The FLAC fixture is generated, not borrowed.** There is no encoder on this
+  machine and `flacenc` cannot be vendored (it needs `heapless` → `built`), so
+  `scripts/fixtures/make-flac.py` writes a small, fully specified FLAC by hand:
+  `fLaC` + STREAMINFO + two CONSTANT frames with real CRC-8/CRC-16. Symphonia
+  accepting it is a genuine cross-check of both the fixture and the integration.
 
 ### Measured here
 
 ```text
-$ cargo run -q -p aurora-app -- --decode fixtures/music/00\ -\ Fixture\ Tone.wav
-fixtures/music/00 - Fixture Tone.wav
+$ cargo run -q -p aurora-app -- --decode "fixtures/music/00 - Fixture Steps.flac"
+fixtures/music/00 - Fixture Steps.flac
+  48000 Hz, 1 channel(s), 16-bit integer PCM
+  8192 frames, 0.171 s
+  peak 0.2500 (-12.0 dBFS), rms 0.1768
+
+$ cargo run -q -p aurora-app -- --decode "fixtures/music/00 - Fixture Tone.wav"
   48000 Hz, 1 channel(s), 16-bit integer PCM
   2400 frames, 0.050 s
   peak 0.2500 (-12.0 dBFS), rms 0.1768
 ```
 
-`cargo test --workspace` is now **85 tests**, clippy `-D warnings` clean.
-`aurora-audio` grew from 1 test to 10: 16/24/32-bit decode, float decode,
-extensible headers, odd chunk padding, non-RIFF rejection, unsupported format
-naming, missing file, and partial reads walking to EOF.
+`cargo test --workspace`: **90 tests**, clippy `-D warnings` clean, rustfmt clean.
+`aurora-audio` has 13 tests: WAV (16/24/32-bit, float, extensible headers, odd
+padding, bad RIFF, unsupported codec, missing file, partial reads), FLAC through
+symphonia (exact sample values at both block boundaries), junk rejection, and the
+missing-file path.
 
 ### Not done / not verified
 
-- **No output device**: `NullOutput` is still the only `AudioOutput`. The clock
-  is not yet driven by a real device counter.
-- **No FLAC/ALAC/MP3/AAC/Opus/Vorbis**: those need `symphonia`, which is not in
-  the offline mirror. Vendoring it is the next blocker; the `Decoder` trait is
-  the seam it will plug into.
-- **No sample-rate conversion or channel mapping**: the decoder reports what the
-  file contains; negotiating with a device at a different rate is output-side work.
+- **No output device**: `NullOutput` is still the only `AudioOutput`; the clock is
+  not driven by a device counter yet.
+- **MP3/AAC/ALAC/CAF are compiled in but not exercised**: no encoder here can
+  produce those files either, so their code paths are untested (the FLAC path
+  exercises everything except the specific codecs).
+- **AIFF is not supported** (see above); the spec lists it, so this is a real gap.
+- No resampling, channel mapping, gapless playback or seek yet.

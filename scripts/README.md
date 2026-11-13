@@ -69,6 +69,21 @@ local directory source:
   `wayland-protocols`, `wayland-protocols-wlr` and `wayland-protocols-plasma`.
   Without those the `wayland_scanner` proc macro panics 108 times at build time.
 
+### Decoder crates (symphonia)
+
+`symphonia` publishes 22 crates in one workspace, so `GIT_SOURCES` maps each crate
+name to `pdeljanov/Symphonia@v0.5.5` and `find_crate_dir` picks the matching
+sub-directory. Two constraints are baked into the pinned feature list:
+
+- `wav` and `aiff` are **off**: both pull `symphonia-format-riff`, which depends
+  on the `extended` crate. No source for `extended` is reachable from here (crate
+  repo 404s), so WAV stays on `aurora-audio`'s own decoder and AIFF is
+  unsupported for now.
+- `flacenc` (a pure-Rust FLAC *encoder*, wanted only to generate a test fixture)
+  is listed in `GIT_SOURCES` but cannot be resolved: it needs `heapless` →
+  `built` → more. The fixture is therefore hand-written by
+  `scripts/fixtures/make-flac.py` instead.
+
 ### iced 0.14 offline recipe
 
 ```toml

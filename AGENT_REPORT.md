@@ -68,7 +68,7 @@ from "pending" to "verified" before the UI work in Phase 5 depends on it.
   directory source. That was the phase's prerequisite: the whole toolkit graph
   (iced → winit → smithay-client-toolkit/softbuffer/zbus) now resolves.
 - `cargo build --workspace` succeeds; clippy `--all-targets -- -D warnings` is
-  clean; **85 unit tests pass** (was 28).
+  clean; **90 unit tests pass** (was 28).
 - The binary boots end to end: XDG directories are created, `settings.toml` is
   created-or-loaded, `tracing` is installed, and it picks a front end.
 - The **§27 settings surface** is implemented as typed data (playback, lyrics,
@@ -125,22 +125,29 @@ CPAL output behind `AudioOutput`, with the clock driven by the device counter.
 
 ---
 
-## Phase 2 (partial) — decoder seam + WAV — DONE (2026-11-13)
+## Phase 2 (partial) — decoders — DONE (2026-11-13)
 
 ### What works (verified by running it)
 
-- A dependency-free WAV decoder in `aurora-audio` behind a `Decoder` trait:
-  PCM 8/16/24/32-bit, IEEE float 32/64, any channel count, `WAVE_FORMAT_EXTENSIBLE`,
-  odd-sized chunk padding, `fmt ` after `data`, streamed `data` sizes.
-- `aurora --decode <FILE>` prints format, frames, duration, peak (dBFS) and RMS;
-  it decodes the whole file in blocks, so a corrupt stream fails immediately.
-- `fixtures/music/00 - Fixture Tone.wav` (0.05 s, −12 dBFS) proves it end to end.
+- **Two decoders behind one `Decoder` trait**: a dependency-free WAV decoder
+  (PCM 8/16/24/32, float 32/64, any channel count, `WAVE_FORMAT_EXTENSIBLE`,
+  odd-sized chunks, `fmt ` after `data`) and **Symphonia 0.5.5** for
+  FLAC/MP3/AAC/ALAC/CAF/M4A, vendored offline from `pdeljanov/Symphonia`.
+- **FLAC decoding is verified on real data**: `fixtures/music/00 - Fixture
+  Steps.flac` decodes to exactly 8192 frames with the expected sample values at
+  both block boundaries. That fixture is written byte by byte by
+  `scripts/fixtures/make-flac.py` (real CRC-8/CRC-16), so the test checks two
+  implementations against each other rather than trusting either alone.
+- `aurora --decode <FILE>` prints format, frames, duration, peak (dBFS) and RMS,
+  decoding the whole file in blocks so a corrupt stream fails immediately.
 
 ### What does not work / is not verified
 
-- **No audio output at all**: no ALSA/PipeWire in this container and `cpal`
-  cannot be vendored (needs `alsa-sys`), so `NullOutput` remains the only
-  `AudioOutput` and the clock is still driven by tests, not a device.
-- **No FLAC/ALAC/MP3/AAC/Opus**: `symphonia` is not in the offline mirror.
-  The decoder trait is ready for it.
+- **No audio output at all**: no ALSA/PipeWire here and `cpal` cannot be
+  vendored (needs `alsa-sys`), so `NullOutput` remains the only `AudioOutput`
+  and the clock is still driven by tests, not a device.
+- **MP3/AAC/ALAC/CAF are compiled in but never exercised** — no encoder on this
+  machine can produce those files.
+- **AIFF is unsupported**: `symphonia-format-riff` (needed for WAV and AIFF)
+  depends on the `extended` crate, which cannot be obtained offline.
 - No resampling, channel mapping, gapless handling or seek yet.

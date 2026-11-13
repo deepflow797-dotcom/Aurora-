@@ -11,7 +11,7 @@
 
 use std::path::Path;
 
-use aurora_audio::wav::{DecodeError, Decoder, Format, WavDecoder};
+use aurora_audio::wav::{DecodeError, Format};
 
 /// What was found in a file.
 #[derive(Debug, Clone, PartialEq)]
@@ -49,7 +49,7 @@ impl AudioSummary {
 ///
 /// Propagates header and stream errors from [`WavDecoder`].
 pub fn inspect(path: &Path) -> Result<AudioSummary, DecodeError> {
-    let mut decoder = WavDecoder::open(path)?;
+    let mut decoder = aurora_audio::open(path)?;
     let format = decoder.format();
     let mut block = vec![0.0_f32; 4096];
     let mut frames = 0_u64;
@@ -114,6 +114,30 @@ mod tests {
             "{}",
             summary.peak_dbfs()
         );
+    }
+
+    #[test]
+    fn inspects_the_flac_fixture_through_the_same_path() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/music/00 - Fixture Steps.flac");
+        let summary = inspect(&path).expect("decode flac");
+        assert_eq!(summary.format.sample_rate, 48_000);
+        assert_eq!(summary.format.channels, 1);
+        assert_eq!(summary.frames, 8_192);
+        assert_eq!(summary.duration, std::time::Duration::from_micros(170_666));
+        assert!((summary.peak - 0.25).abs() < 1e-6);
+        // Half the file is a constant 0.25, half is silence: rms = 0.25/sqrt(2).
+        assert!(
+            (summary.rms - 0.176_777).abs() < 1e-4,
+            "rms {}",
+            summary.rms
+        );
+    }
+
+    #[test]
+    fn an_unknown_extension_is_named_not_guessed() {
+        let err = inspect(Path::new("/tmp/track.xyz")).expect_err("must fail");
+        assert!(matches!(err, DecodeError::UnknownExtension { .. }), "{err}");
     }
 
     #[test]

@@ -98,6 +98,16 @@ pub enum DecodeError {
     },
     #[error("invalid WAV data: {0}")]
     Invalid(&'static str),
+    #[error("{path} contains no audio track")]
+    NoAudioTrack { path: PathBuf },
+    #[error("{path} does not describe its sample rate or channels")]
+    MissingFormatInfo { path: PathBuf },
+    #[error("{path} uses a format this build cannot decode: {detail}")]
+    Unsupported { path: PathBuf, detail: String },
+    #[error("cannot decode {path}: {detail}")]
+    Symphonia { path: PathBuf, detail: String },
+    #[error("{path} has an extension no decoder here handles")]
+    UnknownExtension { path: PathBuf },
 }
 
 /// A parsed WAV file: format plus the byte range of its samples.

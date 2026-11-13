@@ -13,9 +13,39 @@
 //! The decoder never owns the position; the device does. That is what keeps the
 //! lyrics in sync on a machine with a 512-frame PipeWire quantum.
 
+pub mod symphonia_decoder;
 pub mod wav;
 
+pub use symphonia_decoder::SymphoniaDecoder;
 pub use wav::{DecodeError, Decoder, Format, WavDecoder};
+
+use std::path::Path;
+
+/// Opens `path` with the right decoder for its extension.
+///
+/// WAV goes to the in-crate decoder (it is exact, allocation-light and does not
+/// depend on a container parser); everything else goes to `symphonia`.
+///
+/// # Errors
+///
+/// Propagates the chosen decoder's errors; an extension no decoder knows about
+/// is [`DecodeError::UnknownExtension`] rather than a guess.
+pub fn open(path: &Path) -> Result<Box<dyn Decoder>, DecodeError> {
+    let extension = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    match extension.as_str() {
+        "wav" | "wave" => Ok(Box::new(WavDecoder::open(path)?)),
+        "flac" | "m4a" | "alac" | "mp3" | "aac" | "caf" | "mp4" => {
+            Ok(Box::new(SymphoniaDecoder::open(path)?))
+        }
+        _ => Err(DecodeError::UnknownExtension {
+            path: path.to_path_buf(),
+        }),
+    }
+}
 
 use std::time::Duration;
 

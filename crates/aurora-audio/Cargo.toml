@@ -10,3 +10,4 @@ publish.workspace = true
 [dependencies]
 aurora-core = { workspace = true }
 thiserror = { workspace = true }
+symphonia = { workspace = true }
