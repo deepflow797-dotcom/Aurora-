@@ -50,8 +50,9 @@ impl Format {
 /// A decoder turns bytes into interleaved `f32` samples.
 ///
 /// Implementations must be able to report their format before producing any
-/// sample, because the output device is opened from it.
-pub trait Decoder {
+/// sample, because the output device is opened from it. They are `Send` because
+/// a real backend hands the source to its own audio thread at start-up.
+pub trait Decoder: Send {
     /// Format of the stream.
     fn format(&self) -> Format;
 

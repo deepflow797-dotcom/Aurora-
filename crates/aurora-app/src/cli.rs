@@ -20,6 +20,8 @@ pub struct Args {
     pub demo_root: Option<PathBuf>,
     /// Decode one file, report what is in it, and exit.
     pub decode: Option<PathBuf>,
+    /// Simulate playback of one file through a device-free engine, then exit.
+    pub play: Option<PathBuf>,
 }
 
 /// Result of parsing: either arguments or something to print and exit on.
@@ -40,7 +42,8 @@ OPTIONS:
     --headless             Start without a window (settings, scan and logs only)
     --config-dir <PATH>    Use <PATH> instead of $XDG_CONFIG_HOME/aurora
     --demo [<PATH>]        Run the Phase 0 pipeline over <PATH> and exit
-    --decode <FILE>        Decode <FILE> (WAV today) and print its format and levels
+    --decode <FILE>        Decode <FILE>, print its format and levels
+    --play <FILE>          Simulate playback of <FILE> with no sound card
     -h, --help             Show this help
     -V, --version          Show the version
 
@@ -76,6 +79,10 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String> 
             "--decode" => {
                 let value = iter.next().ok_or("--decode needs a file path")?;
                 parsed.decode = Some(PathBuf::from(value));
+            }
+            "--play" => {
+                let value = iter.next().ok_or("--play needs a file path")?;
+                parsed.play = Some(PathBuf::from(value));
             }
             "--config-dir" => {
                 let value = iter.next().ok_or("--config-dir needs a path")?;
@@ -137,6 +144,15 @@ mod tests {
         };
         assert_eq!(parsed.decode, Some(PathBuf::from("a.wav")));
         assert!(parse(args(&["--decode"])).is_err());
+    }
+
+    #[test]
+    fn play_takes_a_file() {
+        let Parsed::Run(parsed) = parse(args(&["--play", "a.flac"])).unwrap() else {
+            panic!("expected Run");
+        };
+        assert_eq!(parsed.play, Some(PathBuf::from("a.flac")));
+        assert!(parse(args(&["--play"])).is_err());
     }
 
     #[test]

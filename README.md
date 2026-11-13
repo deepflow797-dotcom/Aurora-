@@ -57,6 +57,7 @@ cargo run -p aurora-app                 # the shell window (headless without Way
 cargo run -p aurora-app -- --headless   # settings + library scan, no window
 cargo run -p aurora-app -- --demo       # Phase 0 pipeline over fixtures/
 cargo run -p aurora-app -- --decode "fixtures/music/00 - Fixture Steps.flac"
+cargo run -p aurora-app -- --play "fixtures/music/00 - Fixture Steps.flac"
 ```
 
 ## Settings
@@ -80,8 +81,10 @@ Logging goes to stderr at `AURORA_LOG` level (`error|warn|info|debug|trace`);
   X11 backend needs a `ctor` release that cannot be vendored here (see
   `scripts/README.md`).
 - **Audio:** Symphonia (FLAC/MP3/AAC/ALAC/CAF) plus an in-crate WAV decoder,
-  behind one `Decoder` trait; CPAL for output is still missing (no ALSA in this
-  sandbox). `aurora --decode <file>` decodes a file today. AIFF is not supported
+  behind one `Decoder` trait, feeding a `PlaybackEngine` that publishes the
+  audio clock. CPAL for output is still missing (no ALSA in this sandbox), so
+  playback runs against a simulated device: `aurora --decode <file>` and
+  `aurora --play <file>`. AIFF is not supported
   yet: `symphonia-format-riff` needs a crate that cannot be vendored here.
 - **Database:** SQLite via `rusqlite` (bundled), FTS5 for search.
 - **Tags:** `lofty` (pure Rust).

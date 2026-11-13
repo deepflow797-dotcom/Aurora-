@@ -13,8 +13,11 @@
 //! The decoder never owns the position; the device does. That is what keeps the
 //! lyrics in sync on a machine with a 512-frame PipeWire quantum.
 
+pub mod engine;
 pub mod symphonia_decoder;
 pub mod wav;
+
+pub use engine::{AudioSource, DecoderSource, NullDevice, PlaybackEngine};
 
 pub use symphonia_decoder::SymphoniaDecoder;
 pub use wav::{DecodeError, Decoder, Format, WavDecoder};

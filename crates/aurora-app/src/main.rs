@@ -14,6 +14,7 @@ mod cli;
 mod decode;
 mod demo;
 mod headless;
+mod play;
 mod shell;
 #[cfg(test)]
 mod shot;
@@ -43,6 +44,14 @@ fn main() -> ExitCode {
     }
 }
 
+/// `m:ss.mmm`, the way a player shows a position.
+fn format_duration(position: std::time::Duration) -> String {
+    let total_ms = position.as_millis();
+    let minutes = total_ms / 60_000;
+    let seconds = (total_ms % 60_000) as f64 / 1_000.0;
+    format!("{minutes}:{seconds:06.3}")
+}
+
 fn run(args: cli::Args) -> ExitCode {
     logging::init();
     info!(
@@ -50,6 +59,32 @@ fn run(args: cli::Args) -> ExitCode {
         level = %logging::level_from_env(),
         "starting"
     );
+
+    if let Some(path) = args.play.clone() {
+        return match play::simulate(&path, None) {
+            Ok(report) => {
+                println!("{}", path.display());
+                println!(
+                    "  played {} of {} in {} device callbacks (480 frames each)",
+                    format_duration(report.delivered),
+                    report
+                        .duration
+                        .map_or_else(|| "unknown length".to_string(), format_duration),
+                    report.callbacks
+                );
+                println!(
+                    "  clock position at end: {}",
+                    format_duration(report.final_position)
+                );
+                ExitCode::SUCCESS
+            }
+            Err(err) => {
+                error!(%err, "simulated playback failed");
+                eprintln!("aurora --play: {err}");
+                ExitCode::FAILURE
+            }
+        };
+    }
 
     if let Some(path) = args.decode.clone() {
         return match decode::inspect(&path) {

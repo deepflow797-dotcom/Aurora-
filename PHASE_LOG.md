@@ -328,3 +328,52 @@ yield frame 4095 (`0.25`, the last of block 0) and then silence.
   exercises everything except the specific codecs).
 - **AIFF is not supported** (see above); the spec lists it, so this is a real gap.
 - No resampling, channel mapping, gapless playback or seek yet.
+
+---
+
+## Phase 2.5 — playback engine, device-free (2026-11-13)
+
+The decoder half of Phase 2 is done; output hardware is not available here. What
+*can* be built and verified is the part between them: the engine that a device
+callback drives.
+
+### Delivered
+
+- **`AudioSource`** — the pull-side contract (`sample_rate`, `channels`, `fill`,
+  `seek`, `total_frames`). `DecoderSource` implements it over any `Decoder` plus
+  linear gain; a future cpal/AAudio backend only has to call `fill` from its
+  callback.
+- **`PlaybackEngine`** — play / pause / seek / `pull`, counting frames handed to
+  the device and publishing `(position, instant)` into the `PlaybackClock` from
+  `aurora-core`. It never derives a position from a wall clock, which is the
+  §63.4 rule: the device is the time source.
+- **`NullDevice`** — models a device quantum (480 frames ≈ a 10 ms PipeWire
+  graph), with `run_to_end` for tests.
+- **`aurora --play <FILE>`** — runs the real engine against `NullDevice` and
+  prints what the UI would show.
+
+### Measured here
+
+```text
+$ cargo run -q -p aurora-app -- --play "fixtures/music/00 - Fixture Steps.flac"
+fixtures/music/00 - Fixture Steps.flac
+  played 0:00.170 of 0:00.170 in 18 device callbacks (480 frames each)
+  clock position at end: 0:00.170
+```
+
+`cargo test --workspace`: **102 tests**, clippy `-D warnings` clean, rustfmt clean.
+Engine tests cover: position advancing by frames rather than by callback count,
+clock extrapolation from the published pair, volume scaling, pause keeping the
+position and blanking the buffer, end-of-stream stopping exactly at 170.666 ms
+(8 full callbacks + 1 short), seek moving both source and clock, and a broken
+source stopping playback instead of being retried forever.
+
+### Not done / not verified
+
+- **Nothing is audible.** `NullDevice` counts frames; it does not open a device.
+  The cpal backend is still blocked on `alsa-sys`, which cannot be fetched here.
+- **No resampling or channel mapping**: a 44.1 kHz mono file cannot be handed to a
+  48 kHz stereo device yet; `DecoderSource` reports what the file contains and the
+  engine assumes the device agrees.
+- **No queue, no gapless hand-off, no underrun handling**: `PlaybackEngine` plays
+  one source. The transport state machine in `aurora-core` is not wired to it yet.

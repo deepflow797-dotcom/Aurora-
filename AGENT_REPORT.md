@@ -68,7 +68,7 @@ from "pending" to "verified" before the UI work in Phase 5 depends on it.
   directory source. That was the phase's prerequisite: the whole toolkit graph
   (iced → winit → smithay-client-toolkit/softbuffer/zbus) now resolves.
 - `cargo build --workspace` succeeds; clippy `--all-targets -- -D warnings` is
-  clean; **92 unit tests pass** (was 28).
+  clean; **102 unit tests pass** (was 28).
 - The binary boots end to end: XDG directories are created, `settings.toml` is
   created-or-loaded, `tracing` is installed, and it picks a front end.
 - The **§27 settings surface** is implemented as typed data (playback, lyrics,
@@ -154,4 +154,26 @@ CPAL output behind `AudioOutput`, with the clock driven by the device counter.
   machine can produce those files.
 - **AIFF is unsupported**: `symphonia-format-riff` (needed for WAV and AIFF)
   depends on the `extended` crate, which cannot be obtained offline.
-- No resampling, channel mapping, gapless handling or seek yet.
+- No resampling, channel mapping, gapless playback or queue yet.
+
+---
+
+## Phase 2.5 — playback engine (device-free) — DONE (2026-11-13)
+
+### What works (verified by running it)
+
+- `AudioSource` / `DecoderSource` / `PlaybackEngine` / `NullDevice` in
+  `aurora-audio`: the engine a real device callback will drive. Position comes
+  from frames handed to the device and is published into the `aurora-core`
+  seqlock clock, never derived from a timer.
+- `aurora --play <FILE>` renders a whole file through the engine with no sound
+  card: `0:00.170 of 0:00.170 in 18 device callbacks (480 frames each)`.
+- Tests cover position arithmetic, clock extrapolation, volume, pause, exact
+  end-of-stream, seek, and a decoding failure stopping playback cleanly.
+
+### What does not work / is not verified
+
+- **Nothing is audible** — `NullDevice` counts frames, it does not open a device;
+  cpal remains blocked on the unfetchable `alsa-sys`.
+- No resampling, channel mapping, queue or gapless hand-off; `aurora-core`'s
+  `Transport` state machine is not wired to the engine yet.
