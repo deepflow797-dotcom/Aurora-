@@ -16,11 +16,12 @@ use std::path::{Path, PathBuf};
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
 use symphonia::core::errors::Error as SymphoniaError;
-use symphonia::core::formats::{FormatOptions, FormatReader};
+use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::sample::SampleFormat;
+use symphonia::core::units::TimeBase;
 
 use crate::wav::{DecodeError, Decoder, Format};
 
@@ -36,6 +37,12 @@ pub struct SymphoniaDecoder {
     pending: Vec<f32>,
     pending_at: usize,
     finished: bool,
+    /// Converts a packet timestamp into samples.
+    time_base: Option<TimeBase>,
+    /// After a seek: the frame the caller asked for. The demuxer may hand back
+    /// the packet *containing* it (or an earlier one), so the first packet is
+    /// trimmed until this frame is reached.
+    target_frame: Option<u64>,
 }
 
 impl SymphoniaDecoder {
@@ -123,11 +130,13 @@ impl SymphoniaDecoder {
             },
             track_id: track.id,
             total_frames: track.codec_params.n_frames,
+            time_base: track.codec_params.time_base,
             reader,
             decoder,
             pending: Vec::new(),
             pending_at: 0,
             finished: false,
+            target_frame: None,
         })
     }
 
@@ -161,10 +170,30 @@ impl SymphoniaDecoder {
             };
 
             let spec = *decoded.spec();
+            let channels = spec.channels.count();
             let mut samples = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
             samples.copy_interleaved_ref(decoded);
+
+            // Trim the packet down to the frame a seek asked for.
+            let mut skip_samples = 0;
+            if let Some(target) = self.target_frame {
+                let packet_frame =
+                    packet_frame_in_samples(packet.ts, self.format.sample_rate, self.time_base);
+                let frames = samples.samples().len() / channels.max(1);
+                if packet_frame.saturating_add(frames as u64) <= target {
+                    // This packet is entirely before the target.
+                    continue;
+                }
+                skip_samples = usize::try_from(target.saturating_sub(packet_frame))
+                    .unwrap_or(usize::MAX)
+                    .saturating_mul(channels)
+                    .min(samples.samples().len());
+                self.target_frame = None;
+            }
+
             self.pending.clear();
-            self.pending.extend_from_slice(samples.samples());
+            self.pending
+                .extend_from_slice(&samples.samples()[skip_samples..]);
             self.pending_at = 0;
             return Ok(!self.pending.is_empty());
         }
@@ -184,6 +213,46 @@ impl std::fmt::Debug for SymphoniaDecoder {
 }
 
 impl Decoder for SymphoniaDecoder {
+    fn seek(&mut self, position: std::time::Duration) -> Result<u64, DecodeError> {
+        let time = symphonia::core::units::Time::new(
+            position.as_secs(),
+            f64::from(position.subsec_nanos()) / 1e9,
+        );
+        let seeked = self
+            .reader
+            .seek(
+                SeekMode::Accurate,
+                SeekTo::Time {
+                    time,
+                    track_id: Some(self.track_id),
+                },
+            )
+            .map_err(|err| match err {
+                SymphoniaError::SeekError(_) => DecodeError::SeekUnsupported {
+                    path: self.path.clone(),
+                    position,
+                },
+                other => map_symphonia(other, &self.path),
+            })?;
+
+        // Discard whatever the decoder buffered for the old position, or the
+        // first packet after the seek would replay pre-seek audio.
+        self.decoder.reset();
+        self.pending.clear();
+        self.pending_at = 0;
+        self.finished = false;
+
+        // The demuxer lands at or before the request and reports where. The gap
+        // up to the requested frame is trimmed when the next packet is decoded;
+        // without that, a file with no seek table replays the containing block.
+        let requested = position
+            .as_micros()
+            .saturating_mul(u128::from(self.format.sample_rate))
+            / 1_000_000;
+        self.target_frame = Some(u64::try_from(requested).unwrap_or(u64::MAX));
+        Ok(seeked.required_ts)
+    }
+
     fn format(&self) -> Format {
         self.format
     }
@@ -207,6 +276,22 @@ impl Decoder for SymphoniaDecoder {
             written += take;
         }
         Ok(written)
+    }
+}
+
+/// Converts a packet timestamp (in the track's time base) to a frame index.
+///
+/// Time bases are `numer/denom` seconds per tick, so one tick is
+/// `numer * sample_rate / denom` frames - the identity for the FLAC/MP3 case
+/// (`1/sample_rate`).
+fn packet_frame_in_samples(ts: u64, sample_rate: u32, time_base: Option<TimeBase>) -> u64 {
+    match time_base {
+        None => ts,
+        Some(base) if base.numer == 1 && base.denom == sample_rate => ts,
+        Some(base) => {
+            let numerator = u128::from(ts) * u128::from(base.numer) * u128::from(sample_rate);
+            u64::try_from(numerator / u128::from(base.denom.max(1))).unwrap_or(u64::MAX)
+        }
     }
 }
 
@@ -262,6 +347,39 @@ mod tests {
         assert!(out[8_191].abs() < 1e-6, "last sample");
 
         assert_eq!(decoder.read(&mut out).expect("eof"), 0);
+    }
+
+    #[test]
+    fn seeking_into_flac_lands_on_the_right_block() {
+        let mut decoder =
+            SymphoniaDecoder::open(&fixture("00 - Fixture Steps.flac")).expect("open flac");
+
+        // Block 1 starts at frame 4096 = 85.33 ms and is silent.
+        let frame = decoder
+            .seek(std::time::Duration::from_micros(85_333))
+            .expect("seek to block 1");
+        // An accurate seek lands at or *before* the request, so frame 4095 (the
+        // last sample of block 0) is a correct answer for 4096/48000 s.
+        assert!(frame <= 4_096, "must not overshoot, landed on {frame}");
+        let mut out = [0.0_f32; 8];
+        assert_eq!(decoder.read(&mut out).expect("read after seek"), 8);
+        assert!(
+            (out[0] - 0.25).abs() < 1e-6,
+            "frame {frame} should still be block 0, got {}",
+            out[0]
+        );
+        assert!(
+            out[1..].iter().all(|sample| sample.abs() < 1e-6),
+            "frames after {} must be silent, got {:?}",
+            frame + 1,
+            &out[1..]
+        );
+
+        // Back to the start: block 0 is a constant 0.25.
+        assert_eq!(decoder.seek(std::time::Duration::ZERO).expect("rewind"), 0);
+        let read = decoder.read(&mut out).expect("read after rewind");
+        assert!(read > 0);
+        assert!((out[0] - 0.25).abs() < 1e-6, "first sample {}", out[0]);
     }
 
     #[test]

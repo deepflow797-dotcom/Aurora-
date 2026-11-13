@@ -301,11 +301,23 @@ $ cargo run -q -p aurora-app -- --decode "fixtures/music/00 - Fixture Tone.wav"
   peak 0.2500 (-12.0 dBFS), rms 0.1768
 ```
 
-`cargo test --workspace`: **90 tests**, clippy `-D warnings` clean, rustfmt clean.
-`aurora-audio` has 13 tests: WAV (16/24/32-bit, float, extensible headers, odd
-padding, bad RIFF, unsupported codec, missing file, partial reads), FLAC through
-symphonia (exact sample values at both block boundaries), junk rejection, and the
-missing-file path.
+`cargo test --workspace`: **92 tests**, clippy `-D warnings` clean, rustfmt clean.
+`aurora-audio` has 15 tests: WAV (16/24/32-bit, float, extensible headers, odd
+padding, seek, bad RIFF, unsupported codec, missing file, partial reads), FLAC
+through symphonia (exact sample values at both block boundaries, seek across a
+block boundary), junk rejection, and the missing-file path.
+
+### Seeking, and a bug it exposed
+
+`Decoder::seek` is now part of the contract (frame-exact, never past the
+request). WAV seeks by byte offset. Symphonia's `SeekMode::Accurate` only
+guarantees landing *at or before* the request, and for a file with no SEEKTABLE
+it returns the packet *containing* the target - so a naive implementation
+replays the whole block. The decoder therefore remembers the requested frame and
+trims the first packet after the seek (`target_frame` + `packet_frame_in_samples`
+for time bases that are not `1/sample_rate`). The FLAC fixture, with its two
+4096-sample blocks, is exactly the case that catches this: seek to 85.333 ms must
+yield frame 4095 (`0.25`, the last of block 0) and then silence.
 
 ### Not done / not verified
 

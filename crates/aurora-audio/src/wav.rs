@@ -67,6 +67,23 @@ pub trait Decoder {
     /// Returns [`DecodeError`] when the stream is malformed.
     fn read(&mut self, out: &mut [f32]) -> Result<usize, DecodeError>;
 
+    /// Seeks to `position` and returns the frame index the decoder actually
+    /// landed on.
+    ///
+    /// Implementations seek to, or before, the requested position - never past
+    /// it - because the transport must not skip audio.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DecodeError::SeekUnsupported`] when a stream cannot seek, and
+    /// [`DecodeError::SeekOutOfRange`] when the position is past the end.
+    fn seek(&mut self, position: std::time::Duration) -> Result<u64, DecodeError> {
+        Err(DecodeError::SeekUnsupported {
+            path: PathBuf::new(),
+            position,
+        })
+    }
+
     /// Total frames, derived from [`Self::total_samples`].
     fn total_frames(&self) -> Option<u64> {
         self.total_samples()
@@ -108,6 +125,16 @@ pub enum DecodeError {
     Symphonia { path: PathBuf, detail: String },
     #[error("{path} has an extension no decoder here handles")]
     UnknownExtension { path: PathBuf },
+    #[error("cannot seek {path} to {position:?}: the stream is not seekable")]
+    SeekUnsupported {
+        path: PathBuf,
+        position: std::time::Duration,
+    },
+    #[error("cannot seek {path} to {position:?}: past the end of the stream")]
+    SeekOutOfRange {
+        path: PathBuf,
+        position: std::time::Duration,
+    },
 }
 
 /// A parsed WAV file: format plus the byte range of its samples.
@@ -292,7 +319,32 @@ fn parse_fmt(bytes: &[u8]) -> Result<Format, DecodeError> {
     })
 }
 
+impl WavDecoder {
+    /// Byte offset of the first sample of `frame`, clamped to the data chunk.
+    fn frame_offset(&self, frame: u64) -> u64 {
+        let frame_bytes =
+            u64::from(self.format.channels) * u64::from(self.format.bits_per_sample) / 8;
+        let total_frames = self.data_len / frame_bytes.max(1);
+        frame.min(total_frames) * frame_bytes
+    }
+}
+
 impl Decoder for WavDecoder {
+    fn seek(&mut self, position: std::time::Duration) -> Result<u64, DecodeError> {
+        let rate = u64::from(self.format.sample_rate.max(1));
+        let frame = position.as_micros().saturating_mul(u128::from(rate)) / 1_000_000;
+        let frame = u64::try_from(frame).unwrap_or(u64::MAX);
+        let total_frames = self.format.frames(self.total_samples().unwrap_or(0).max(1));
+        if frame > total_frames {
+            return Err(DecodeError::SeekOutOfRange {
+                path: self.path.clone(),
+                position,
+            });
+        }
+        self.cursor = self.frame_offset(frame);
+        Ok(frame)
+    }
+
     fn format(&self) -> Format {
         self.format
     }
@@ -513,6 +565,38 @@ mod tests {
         let mut out = [0.0_f32; 3];
         assert_eq!(decoder.read(&mut out).expect("read"), 3);
         assert!((out[0] - (130.0 - 128.0) / 128.0).abs() < 1e-6);
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn seeking_moves_to_the_requested_frame() {
+        // 4 frames of mono 16-bit: values 1..=4.
+        let mut raw = Vec::new();
+        for value in [1_i16, 2, 3, 4] {
+            raw.extend_from_slice(&value.to_le_bytes());
+        }
+        let path = write_temp("seek", &wav_bytes(1, 1, 1_000, 16, &raw, 1));
+        let mut decoder = WavDecoder::open(&path).expect("open");
+
+        // 2 ms at 1 kHz = frame 2.
+        let frame = decoder
+            .seek(std::time::Duration::from_micros(2_000))
+            .expect("seek");
+        assert_eq!(frame, 2);
+        let mut out = [0.0_f32; 2];
+        assert_eq!(decoder.read(&mut out).expect("read"), 2);
+        assert!((out[0] - 3.0 / 32_768.0).abs() < 1e-9);
+        assert!((out[1] - 4.0 / 32_768.0).abs() < 1e-9);
+
+        // Seeking back to the start plays the first sample again.
+        assert_eq!(decoder.seek(std::time::Duration::ZERO).expect("rewind"), 0);
+        assert_eq!(decoder.read(&mut out).expect("read"), 2);
+        assert!((out[0] - 1.0 / 32_768.0).abs() < 1e-9);
+
+        let err = decoder
+            .seek(std::time::Duration::from_secs(5))
+            .expect_err("past the end");
+        assert!(matches!(err, DecodeError::SeekOutOfRange { .. }), "{err}");
         std::fs::remove_file(&path).ok();
     }
 

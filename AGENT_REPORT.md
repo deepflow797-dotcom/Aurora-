@@ -68,7 +68,7 @@ from "pending" to "verified" before the UI work in Phase 5 depends on it.
   directory source. That was the phase's prerequisite: the whole toolkit graph
   (iced → winit → smithay-client-toolkit/softbuffer/zbus) now resolves.
 - `cargo build --workspace` succeeds; clippy `--all-targets -- -D warnings` is
-  clean; **90 unit tests pass** (was 28).
+  clean; **92 unit tests pass** (was 28).
 - The binary boots end to end: XDG directories are created, `settings.toml` is
   created-or-loaded, `tracing` is installed, and it picks a front end.
 - The **§27 settings surface** is implemented as typed data (playback, lyrics,
@@ -140,6 +140,10 @@ CPAL output behind `AudioOutput`, with the clock driven by the device counter.
   implementations against each other rather than trusting either alone.
 - `aurora --decode <FILE>` prints format, frames, duration, peak (dBFS) and RMS,
   decoding the whole file in blocks so a corrupt stream fails immediately.
+- **Frame-exact seeking** (`Decoder::seek`, never past the request) for both
+  decoders. This caught a real trap: Symphonia's accurate seek only lands at or
+  before the target, so the first packet after a seek is trimmed to the requested
+  frame - otherwise a file without a seek table replays the whole block.
 
 ### What does not work / is not verified
 
