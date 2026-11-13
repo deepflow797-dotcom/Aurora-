@@ -22,6 +22,8 @@ use tracing::{error, info};
 
 use aurora_platform::settings::{AnimationProfile, RepeatMode, Settings};
 
+use crate::theme;
+
 /// Panes reachable from the sidebar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pane {
@@ -33,7 +35,9 @@ pub enum Pane {
 impl Pane {
     const ALL: [Self; 3] = [Self::NowPlaying, Self::Library, Self::Settings];
 
-    fn label(self) -> &'static str {
+    /// Human-readable pane name, used by the sidebar and the screenshot test.
+    #[must_use]
+    pub fn label(self) -> &'static str {
         match self {
             Self::NowPlaying => "Now Playing",
             Self::Library => "Library",
@@ -90,6 +94,36 @@ impl Shell {
             aurora_platform::Theme::Dark => Some(Theme::Dark),
             aurora_platform::Theme::Light => Some(Theme::Light),
         }
+    }
+
+    /// The settings currently in memory (read-only).
+    #[must_use]
+    #[cfg(test)]
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    /// Mutable settings, for tests that need to force a value.
+    #[must_use]
+    #[cfg(test)]
+    pub fn settings_mut(&mut self) -> &mut Settings {
+        &mut self.settings
+    }
+
+    /// Path of the settings file this shell writes.
+    #[must_use]
+    #[cfg(test)]
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
+    /// The theme the window actually uses: the preference, or the dark theme
+    /// when it follows the system (a window manager's preference is not visible
+    /// to a headless render, and guessing light would be worse).
+    #[must_use]
+    #[cfg(test)]
+    pub fn resolved_theme(&self) -> Theme {
+        self.theme().unwrap_or(Theme::Dark)
     }
 
     fn touch(&mut self) {
@@ -259,6 +293,7 @@ impl Shell {
 
     fn settings_pane(&self) -> Element<'_, Message> {
         let s = &self.settings;
+        let accent = s.appearance.accent;
         let status = match &self.status {
             Status::Unchanged => text("").size(12),
             Status::Saved => text("Saved").size(12),
@@ -284,25 +319,35 @@ impl Shell {
             ),
             labelled(
                 "Shuffle",
-                toggler(s.playback.shuffle).on_toggle(Message::Shuffle)
+                toggler(s.playback.shuffle)
+                    .on_toggle(Message::Shuffle)
+                    .style(theme::accent_toggler(accent))
             ),
             labelled(
                 "Resume last track",
-                toggler(s.playback.resume).on_toggle(Message::Resume)
+                toggler(s.playback.resume)
+                    .on_toggle(Message::Resume)
+                    .style(theme::accent_toggler(accent))
             ),
             rule::horizontal(1),
             section("Lyrics"),
             labelled(
                 "Show lyrics",
-                toggler(s.lyrics.enabled).on_toggle(Message::LyricsEnabled)
+                toggler(s.lyrics.enabled)
+                    .on_toggle(Message::LyricsEnabled)
+                    .style(theme::accent_toggler(accent))
             ),
             labelled(
                 "Word highlighting",
-                toggler(s.lyrics.word_highlighting).on_toggle(Message::WordHighlighting)
+                toggler(s.lyrics.word_highlighting)
+                    .on_toggle(Message::WordHighlighting)
+                    .style(theme::accent_toggler(accent))
             ),
             labelled(
                 "Auto-scroll",
-                toggler(s.lyrics.auto_scroll).on_toggle(Message::AutoScroll)
+                toggler(s.lyrics.auto_scroll)
+                    .on_toggle(Message::AutoScroll)
+                    .style(theme::accent_toggler(accent))
             ),
             labelled(
                 "Font scale",
@@ -320,15 +365,21 @@ impl Shell {
             section("Performance"),
             labelled(
                 "Reduced motion",
-                toggler(s.performance.reduced_motion).on_toggle(Message::ReducedMotion)
+                toggler(s.performance.reduced_motion)
+                    .on_toggle(Message::ReducedMotion)
+                    .style(theme::accent_toggler(accent))
             ),
             labelled(
                 "GPU effects",
-                toggler(s.performance.gpu_effects).on_toggle(Message::GpuEffects)
+                toggler(s.performance.gpu_effects)
+                    .on_toggle(Message::GpuEffects)
+                    .style(theme::accent_toggler(accent))
             ),
             space().height(12),
             row![
-                button("Save now").on_press(Message::Save),
+                button("Save now")
+                    .on_press(Message::Save)
+                    .style(theme::primary_button(accent)),
                 button("Revert to file").on_press(Message::Revert),
             ]
             .spacing(8),

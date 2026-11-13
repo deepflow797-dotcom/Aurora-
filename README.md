@@ -16,9 +16,11 @@ no compositor. No audio yet (Phase 2) and no lyric rendering (Phase 3); Phase 0
 delivered the architecture, the technology selection and the UI spike that chose
 iced.
 
-Windows are built but **unverified on screen**: this container has no Wayland
-compositor. The first real check is `cargo run -p aurora-app` on the Fedora
-machine.
+The shell's layout is captured headlessly in `docs/evidence/shell-*.png`
+(rendered through iced's real layout/draw passes). It has **not been displayed on
+a compositor** — this container has none — so `cargo run -p aurora-app` on the
+Fedora machine is the first true check. Note that those screenshots have red and
+blue swapped by an upstream `iced_tiny_skia` bug; see `PHASE_LOG.md`.
 
 | Document | What it is |
 | --- | --- |

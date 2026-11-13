@@ -68,7 +68,7 @@ from "pending" to "verified" before the UI work in Phase 5 depends on it.
   directory source. That was the phase's prerequisite: the whole toolkit graph
   (iced → winit → smithay-client-toolkit/softbuffer/zbus) now resolves.
 - `cargo build --workspace` succeeds; clippy `--all-targets -- -D warnings` is
-  clean; **66 unit tests pass** (was 28).
+  clean; **73 unit tests pass** (was 28).
 - The binary boots end to end: XDG directories are created, `settings.toml` is
   created-or-loaded, `tracing` is installed, and it picks a front end.
 - The **§27 settings surface** is implemented as typed data (playback, lyrics,
@@ -83,11 +83,20 @@ from "pending" to "verified" before the UI work in Phase 5 depends on it.
 - `--demo` runs the Phase 0 pipeline again, now against a real `fixtures/`
   library (it previously failed on a clean checkout: no such directory existed).
 
+- The shell's layout is rendered headlessly through iced's own layout/draw passes
+  (`src/shot.rs`, test-only) and committed to `docs/evidence/`: all three panes,
+  with toggles showing their real on/off state. Tests assert the renders are
+  non-blank, deterministic and respond to settings changes.
+
 ### What does not work / is not verified
 
 - **No window has ever been displayed here.** No compositor, no DRM device: the
-  shell's layout/colour/interaction are unproven, and there is no screenshot to
-  show. Run `cargo run -p aurora-app` on Fedora first.
+  window path (surface creation, HiDPI, input, frame pacing) is unproven. Run
+  `cargo run -p aurora-app` on Fedora first.
+- **Screenshot colours are swapped** (red↔blue) by an upstream `iced_tiny_skia`
+  bug — the blue accent renders orange in `docs/evidence/`. Not compensated for
+  in our code, because the wgpu backend is not affected; a characterisation test
+  fails loudly if iced fixes it.
 - **X11 is unsupported in this build**: the X11 backend needs `ctor ^0.10`, which
   has no vendorable source here. X11-only sessions get a warning and headless
   mode.

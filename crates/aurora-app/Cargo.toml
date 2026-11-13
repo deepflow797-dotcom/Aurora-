@@ -25,6 +25,7 @@ tracing = { workspace = true }
 # (ARCHITECTURE.md rule 2). Feature set is the one verified offline in
 # scripts/README.md - tiny-skia, Wayland, no wgpu, no X11.
 iced = { version = "0.14", default-features = false, features = [
+    "advanced",
     "tiny-skia",
     "wayland",
     "advanced-shaping",
@@ -32,3 +33,9 @@ iced = { version = "0.14", default-features = false, features = [
     "linux-theme-detection",
     "thread-pool",
 ] }
+
+[dev-dependencies]
+# Headless rendering of the shell for the layout test (src/shot.rs). Both crates
+# are already in the iced tree; this only makes them importable from the test.
+iced_runtime = "0.14"
+tiny-skia = "0.11"

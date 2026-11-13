@@ -14,7 +14,10 @@ mod cli;
 mod demo;
 mod headless;
 mod shell;
+#[cfg(test)]
+mod shot;
 mod startup;
+mod theme;
 
 use std::process::ExitCode;
 

@@ -189,13 +189,45 @@ The settings file written on first run (`/tmp/aurora-run/aurora/settings.toml`)
 is the §27 surface in the documented order (playback, lyrics, appearance,
 performance, library), kebab-case keys, every field defaulted.
 
+### 4. Headless render evidence
+
+`crates/aurora-app/src/shot.rs` (test-only) drives the shell through iced's real
+layout and draw passes into a `tiny_skia` pixmap — the same two passes the window
+runs — and writes PNGs to `target/shots/`. Panes committed to
+`docs/evidence/`:
+
+| File | What it shows |
+| --- | --- |
+| `docs/evidence/shell-nowplaying.png` | sidebar + Now Playing pane, accent swatch |
+| `docs/evidence/shell-library.png` | Library pane with a configured folder |
+| `docs/evidence/shell-settings.png` | every §27 control, toggles showing on/off |
+
+Three tests back this up: each pane renders more than 50 distinct colours (a
+blank render fails), rendering is deterministic, and toggling four settings
+changes the pixels. A fourth test *characterises an upstream iced bug*:
+
+> `iced_tiny_skia`'s `into_color` calls
+> `tiny_skia::Color::from_rgba(color.b, color.g, color.r, alpha)`, so the software
+> renderer swaps red and blue. It is present on iced 0.14.0 and on iced master.
+> **The screenshots therefore show the blue accent (`#4c9aff`) as orange.**
+> The app does not compensate: the wgpu backend does not have the bug, so a
+> channel swap in our code would make the real GPU build wrong to make the
+> offline one look right. If the characterisation test ever fails, iced fixed it
+> and the caveat (and the screenshots) should be refreshed.
+
+This is also why the settings pane's palette looks salmon-ish: iced's default
+primary colour is blue.
+
 ### Not verified / known gaps
 
-- **No window was ever displayed.** There is no compositor and no DRM device in
-  this container, so the shell's layout, colours and interaction are unproven on
-  screen. The window code path is exercised only up to "iced was handed a valid
-  boot state"; the first real check is `cargo run -p aurora-app` on the Fedora
-  machine.
+- **No window was ever displayed.** The layout is proven by the headless
+  renders above (same layout/draw code as the window), but there is no compositor
+  and no DRM device here, so the window itself — winit surface creation, HiDPI
+  scaling, input, frame pacing — is unverified. The first real check is
+  `cargo run -p aurora-app` on the Fedora machine.
+- **Screenshot colours are wrong on purpose**: red and blue are swapped by an
+  upstream `iced_tiny_skia` bug (see above). Do not use these images as a colour
+  reference for the design work.
 - **X11 is not supported by this build** (see above). On an X11-only session the
   app logs a warning and starts headless instead of dying.
 - **The accent colour and artwork effects are stored, not rendered.** Phase 1
