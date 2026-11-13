@@ -1,0 +1,13 @@
+[package]
+name = "aurora-library"
+description = "Library scanning and catalog maintenance for Aurora Player"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+aurora-core = { workspace = true }
+aurora-db = { workspace = true }
+thiserror = { workspace = true }

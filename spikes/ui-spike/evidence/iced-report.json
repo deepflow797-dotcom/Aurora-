@@ -1,0 +1,18 @@
+{
+  "candidate": "iced",
+  "width": 1280,
+  "height": 800,
+  "target_fps": 60,
+  "seconds": 60.0,
+  "frames": 3567,
+  "wall_seconds": 60.006,
+  "measured_fps": 59.44,
+  "render_ms": { "mean": 1.571, "p50": 1.521, "p95": 2.180, "p99": 2.651, "max": 3.936 },
+  "frame_ms": { "mean": 16.796, "p50": 16.785, "p95": 16.849, "p99": 16.894, "max": 18.536 },
+  "cpu_seconds": 5.800,
+  "cpu_percent_one_core": 9.7,
+  "cpu_ms_per_frame": 1.626,
+  "rss_peak_mib": 19.7,
+  "gpu_percent": null,
+  "gpu_note": "no GPU device / no DRM node in this container; software rasterizer only"
+}

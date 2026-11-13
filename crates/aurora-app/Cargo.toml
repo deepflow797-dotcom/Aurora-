@@ -1,0 +1,20 @@
+[package]
+name = "aurora-app"
+description = "Aurora Player binary"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "aurora"
+path = "src/main.rs"
+
+[dependencies]
+aurora-core = { workspace = true }
+aurora-audio = { workspace = true }
+aurora-lyrics = { workspace = true }
+aurora-library = { workspace = true }
+aurora-db = { workspace = true }
+aurora-ui = { workspace = true }

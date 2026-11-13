@@ -1,0 +1,12 @@
+[package]
+name = "aurora-core"
+description = "Domain model, playback clock, motion system and portability traits for Aurora Player"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
