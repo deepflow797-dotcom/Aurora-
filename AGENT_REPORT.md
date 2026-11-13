@@ -57,3 +57,59 @@ cargo run --release -- --candidate iced --probe --out out/probe-iced   # BiDi ev
 Start **Phase 1 (Rust foundation)** next, and on the real Fedora machine first
 re-run the two spike commands (plus `--probe`) so the Wayland/60 FPS claim moves
 from "pending" to "verified" before the UI work in Phase 5 depends on it.
+
+---
+
+## Phase 1 — Rust foundation — DONE (2026-11-13)
+
+### What works (verified by running it)
+
+- iced 0.14 (tiny-skia, Wayland) **builds and links offline** from the vendored
+  directory source. That was the phase's prerequisite: the whole toolkit graph
+  (iced → winit → smithay-client-toolkit/softbuffer/zbus) now resolves.
+- `cargo build --workspace` succeeds; clippy `--all-targets -- -D warnings` is
+  clean; **66 unit tests pass** (was 28).
+- The binary boots end to end: XDG directories are created, `settings.toml` is
+  created-or-loaded, `tracing` is installed, and it picks a front end.
+- The **§27 settings surface** is implemented as typed data (playback, lyrics,
+  appearance, performance, library), persisted as TOML, saved atomically after
+  every UI change, clamped and defaulted on load, and tolerant of unknown keys.
+- **Headless mode** loads settings, scans the configured music folders into the
+  catalog and reports counts. `--headless`, `AURORA_HEADLESS=1` and "no
+  compositor" all reach it.
+- A **stale `WAYLAND_DISPLAY` is handled**: the socket is probed before iced is
+  allowed to run, and the window call is wrapped in `catch_unwind`, because iced
+  panics (not errors) when the compositor connection fails.
+- `--demo` runs the Phase 0 pipeline again, now against a real `fixtures/`
+  library (it previously failed on a clean checkout: no such directory existed).
+
+### What does not work / is not verified
+
+- **No window has ever been displayed here.** No compositor, no DRM device: the
+  shell's layout/colour/interaction are unproven, and there is no screenshot to
+  show. Run `cargo run -p aurora-app` on Fedora first.
+- **X11 is unsupported in this build**: the X11 backend needs `ctor ^0.10`, which
+  has no vendorable source here. X11-only sessions get a warning and headless
+  mode.
+- **No audio, no lyric rendering, no SQLite** yet — Phase 2/3 work. The catalog
+  is still in-memory, so a headless scan is discarded on exit.
+- The settings pane's accent colour and artwork effects are stored but not
+  painted yet.
+- Doctests still cannot run (no `rustdoc`).
+
+### How to run what exists
+
+```text
+cargo run -p aurora-app                  # shell window (Wayland), else headless
+cargo run -p aurora-app -- --headless    # settings + scan, no window
+cargo run -p aurora-app -- --demo        # Phase 0 pipeline over fixtures/
+cargo run -p aurora-app -- --help
+```
+
+Settings live at `~/.config/aurora/settings.toml`; logs honour `AURORA_LOG`.
+
+### Recommendation
+
+On the Fedora machine: run the app, then the two spike commands, so both the
+window and the 60 FPS claim become verified. Then Phase 2 — Symphonia decode +
+CPAL output behind `AudioOutput`, with the clock driven by the device counter.

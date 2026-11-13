@@ -7,6 +7,7 @@ members = [
     "crates/aurora-library",
     "crates/aurora-db",
     "crates/aurora-ui",
+    "crates/aurora-platform",
     "crates/aurora-app",
 ]
 # The Phase 0 UI spike lives in its own workspace: it pulls in iced/egui, which
@@ -27,6 +28,10 @@ aurora-lyrics = { path = "crates/aurora-lyrics" }
 aurora-library = { path = "crates/aurora-library" }
 aurora-db = { path = "crates/aurora-db" }
 aurora-ui = { path = "crates/aurora-ui" }
+aurora-platform = { path = "crates/aurora-platform" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+toml = "0.9"
+tracing = "0.1"
+tracing-subscriber = "0.3"

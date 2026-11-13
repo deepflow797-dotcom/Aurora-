@@ -18,3 +18,17 @@ aurora-lyrics = { workspace = true }
 aurora-library = { workspace = true }
 aurora-db = { workspace = true }
 aurora-ui = { workspace = true }
+aurora-platform = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+# The UI toolkit is confined to this crate: no engine crate may depend on iced
+# (ARCHITECTURE.md rule 2). Feature set is the one verified offline in
+# scripts/README.md - tiny-skia, Wayland, no wgpu, no X11.
+iced = { version = "0.14", default-features = false, features = [
+    "tiny-skia",
+    "wayland",
+    "advanced-shaping",
+    "crisp",
+    "linux-theme-detection",
+    "thread-pool",
+] }

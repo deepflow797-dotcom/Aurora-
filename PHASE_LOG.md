@@ -87,3 +87,127 @@ Phase 1 (Rust foundation: config, directories, error types, logging,
 settings persistence, app shell wiring) — after, if possible, re-running the two
 spike commands on the actual Fedora/Wayland machine so the "60 FPS on Wayland"
 claim becomes verified instead of pending.
+
+---
+
+## Phase 1 — Rust foundation (2026-11-13)
+
+Goal: config, directories, error types, logging, settings persistence, and app
+shell wiring, with the iced stack proven to build offline before any of it is
+built on top.
+
+### 1. Offline iced build: the blocker, and how it was closed
+
+`iced 0.14` now **builds and links** in this sandbox from the vendored directory
+source (`/tmp/iced-probe`, a throwaway crate with only iced as a dependency, and
+the app workspace itself). Getting there took five real fixes in
+`scripts/vendor/vendor.py`, all documented in `scripts/README.md`:
+
+1. **Tag selection had to become a curated policy.** `wayland-rs`'s default
+   branch is pre-release 0.31.14 and moved `WEnum` out of `wayland_client`'s root,
+   breaking `smithay-client-toolkit` 0.19/0.20 (157–184 errors). `softbuffer`'s
+   branch is a 0.5-era rewrite that iced cannot compile against. Those crates are
+   now in `NO_BRANCH` and come from release tags; `lyon` publishes releases from
+   `main` without tags, so it is in `PREFER_HEAD`.
+2. **Path dependencies are stripped.** A flat vendor tree has no
+   `wayland-sys/../wayland-backend` sibling; keeping the registry version of the
+   dependency is correct and unblocked `wayland-backend`.
+3. **Generated files and submodule contents are grafted.** `EXTRA_TREES` copies
+   the Wayland protocol XML from `wayland-mirror/wayland-protocols`,
+   `swaywm/wlr-protocols` and `KDE/plasma-wayland-protocols`; without it
+   `wayland_scanner` panics 108 times per build.
+4. **The mirror copies of `raw-window-handle`, `softbuffer` and `wayland-*` were
+   torn** (files from two releases in one directory) and are now pinned to git
+   tags.
+5. **X11 is cut from the build on purpose.** `x11` → `tiny-xlib` → `ctor ^0.10`,
+   and `mmastrac/rust-ctor` only tags 0.13+/1.0, so an X11-enabled iced cannot be
+   vendored offline. Aurora therefore builds Wayland-only; see
+   "Not verified / known gaps".
+
+### 2. What was added
+
+- **`aurora-platform`** (new crate, Linux side of the portability seam):
+  `XdgDirectories` (`AppDirectories`: config/data/cache/lyrics/database),
+  `Settings` (§27 surface, TOML, atomic save, clamped on load), `logging`
+  (`AURORA_LOG`), `session` (Wayland / X11-only / headless + socket probe).
+- **`aurora-app`** now has a real boot sequence: args → logging → directories →
+  settings → session → window or headless. Modules: `cli`, `startup`, `shell`,
+  `headless`, `demo`.
+- **iced shell window**: sidebar (Now Playing / Library / Settings) and a live
+  settings pane; every control writes `settings.toml` immediately and the status
+  line reports success or the exact error.
+- **Headless mode is a real mode**: loads settings, scans the configured folders
+  into the catalog, prints and logs the summary.
+- **`fixtures/`** added (placeholder `.flac` + sidecar `.lrc`) so `--demo` has a
+  library to scan; it was missing, which made the Phase 0 demo fail with
+  "No such file or directory" on a clean checkout.
+
+### 3. Measured here
+
+```text
+$ cargo build --workspace
+    Finished `dev` profile ... (iced 0.14, tiny-skia, no wgpu, no X11)
+
+$ cargo clippy --workspace --all-targets -- -D warnings
+    (no output: 0 warnings)
+
+$ cargo test --workspace
+    16 + 2 + 9 + 1 + 3 + 11 + 22 + 2 = 66 passed, 0 failed
+```
+
+```text
+$ cargo run -q -p aurora-app -- --demo
+Aurora Player 0.1.0 (demo)
+library root: .../fixtures
+first track: Unknown Artist - Rih il-Bahar [Demo]
+lyrics: 4 lines (word-timed: true)
+after 1s: active line Some(0), 1 word(s) highlighted, scroll 0.0px
+```
+
+```text
+$ cargo run -q -p aurora-app -- --headless --config-dir /tmp/aurora-run
+ INFO aurora::startup: settings file created from defaults path=/tmp/aurora-run/aurora/settings.toml
+ INFO aurora: no window; running headless session="headless"
+Aurora Player 0.1.0 (headless mode)
+settings: /tmp/aurora-run/aurora/settings.toml
+lyrics: enabled=true animation=Standard word-highlighting=true | motion disabled=false
+library: 1 folder(s), watch=true rescan-on-start=false
+  /home/user/Aurora-/fixtures/music: 1 visited, 1 added, 0 skipped
+ INFO aurora::headless: headless boot complete folders=1 tracks=1 catalog=1
+```
+
+A stale `WAYLAND_DISPLAY` is handled, not crashed on. iced *panics* when the
+compositor connection fails, so boot probes the socket first and falls back:
+
+```text
+$ WAYLAND_DISPLAY=wayland-9 cargo run -q -p aurora-app -- --config-dir /tmp/aurora-run
+ WARN aurora::startup: WAYLAND_DISPLAY is set but no compositor answers; starting headless
+Aurora Player 0.1.0 (headless mode)
+```
+
+The settings file written on first run (`/tmp/aurora-run/aurora/settings.toml`)
+is the §27 surface in the documented order (playback, lyrics, appearance,
+performance, library), kebab-case keys, every field defaulted.
+
+### Not verified / known gaps
+
+- **No window was ever displayed.** There is no compositor and no DRM device in
+  this container, so the shell's layout, colours and interaction are unproven on
+  screen. The window code path is exercised only up to "iced was handed a valid
+  boot state"; the first real check is `cargo run -p aurora-app` on the Fedora
+  machine.
+- **X11 is not supported by this build** (see above). On an X11-only session the
+  app logs a warning and starts headless instead of dying.
+- **The accent colour and artwork effects are stored, not rendered.** Phase 1
+  wires persistence; theming lands with the lyric view.
+- **No SQLite yet.** The catalog is still `MemoryCatalog`; the headless scan is
+  discarded on exit. Persistence of the *catalog* is Phase 3 work, settings
+  persistence is done.
+- Doctests still cannot run (no `rustdoc` in this toolchain).
+
+### Recommended next step
+
+Run `cargo run -p aurora-app` on the Fedora/Wayland machine (window sanity) and
+`spikes/ui-spike`'s two candidate commands there (the 60 FPS claim), then Phase 2:
+decoding (`symphonia`) and output (`cpal`) behind `AudioOutput`, with the clock
+driven by the device counter.

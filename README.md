@@ -9,9 +9,16 @@ sections where they conflict). Working rules for the agent live in `AGENTS.md`.
 
 ## Status
 
-**Phase 0 — Architecture: complete.** No playable app yet: this phase delivers
-the architecture, the technology selection, a compiling workspace skeleton and
-the mandatory UI spike that picks the UI stack.
+**Phase 1 — Rust foundation: complete.** The app now boots: it resolves XDG
+directories, loads (or creates) `~/.config/aurora/settings.toml`, installs
+logging, then opens an iced window on Wayland — or runs headless when there is
+no compositor. No audio yet (Phase 2) and no lyric rendering (Phase 3); Phase 0
+delivered the architecture, the technology selection and the UI spike that chose
+iced.
+
+Windows are built but **unverified on screen**: this container has no Wayland
+compositor. The first real check is `cargo run -p aurora-app` on the Fedora
+machine.
 
 | Document | What it is |
 | --- | --- |
@@ -31,7 +38,9 @@ crates/aurora-audio     decoding + output behind AudioOutput (NullOutput today)
 crates/aurora-library   scanning and metadata probing
 crates/aurora-db        persistence behind a Catalog trait (in-memory today)
 crates/aurora-ui        toolkit-independent lyric view model
-crates/aurora-app       binary / composition root
+crates/aurora-platform  XDG directories, settings (TOML), logging, session probe
+crates/aurora-app       binary / composition root (the only crate with iced)
+fixtures                tiny demo library (placeholder .flac + sidecar .lrc)
 spikes/ui-spike         separate workspace: UI candidates (never shipped)
 assets/fonts            IBM Plex Sans Arabic + IBM Plex Sans (OFL)
 ```
@@ -42,14 +51,31 @@ assets/fonts            IBM Plex Sans Arabic + IBM Plex Sans (OFL)
 cargo build
 cargo test --lib --bins --tests
 cargo clippy --all-targets -- -D warnings
-cargo run -p aurora-app          # prints a lyric frame plan for the demo track
+cargo run -p aurora-app                 # the shell window (headless without Wayland)
+cargo run -p aurora-app -- --headless   # settings + library scan, no window
+cargo run -p aurora-app -- --demo       # Phase 0 pipeline over fixtures/
 ```
+
+## Settings
+
+Stored as TOML at `$XDG_CONFIG_HOME/aurora/settings.toml` (usually
+`~/.config/aurora/settings.toml`), written atomically on every change. It covers
+the §27 surface: volume, repeat, shuffle, resume; lyrics on/off, animation
+profile, auto-scroll, word highlighting, font scale; theme, accent,
+animation intensity, artwork effects; reduced motion, GPU effects, cache size,
+background scanning; music folders, rescan and folder watching. Unknown keys are
+ignored and out-of-range values are clamped, so hand-editing is safe.
+
+Logging goes to stderr at `AURORA_LOG` level (`error|warn|info|debug|trace`);
+`AURORA_HEADLESS=1` forces the headless path.
 
 ## Chosen stack (details and evidence in the docs)
 
-- **UI:** iced 0.14 — the only spike candidate that orders mixed Arabic/English
-  text correctly (cosmic-text shaping + BiDi); measured faster than egui on the
-  same scene.
+- **UI:** iced 0.14 on the tiny-skia renderer — the only spike candidate that
+  orders mixed Arabic/English text correctly (cosmic-text shaping + BiDi);
+  measured faster than egui on the same scene. Built Wayland-only offline: the
+  X11 backend needs a `ctor` release that cannot be vendored here (see
+  `scripts/README.md`).
 - **Audio:** Symphonia (decode) + CPAL (output), both behind `AudioOutput`.
 - **Database:** SQLite via `rusqlite` (bundled), FTS5 for search.
 - **Tags:** `lofty` (pure Rust).

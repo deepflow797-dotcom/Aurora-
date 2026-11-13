@@ -1,6 +1,8 @@
-# Aurora Player — Architecture (Phase 0)
+# Aurora Player — Architecture (Phase 1)
 
-Status: **Phase 0 deliverables complete**. This document is the architecture of
+Status: **Phase 1 (Rust foundation) complete** — config, XDG directories, error
+types, logging, settings persistence and the app shell are implemented; Phase 0
+deliverables (architecture, UI decision, spike evidence) stand unchanged. This document is the architecture of
 record for the desktop (Fedora/Wayland) target and the portability contract for
 Android. It is updated at the end of every phase; sections marked
 `[planned]` describe decisions taken now but implemented later.
@@ -63,10 +65,35 @@ Rules that are enforced, not aspirational:
 | `aurora-library` | Scanning and metadata probing | `Probe`, `FileNameProbe`, `scan`, `ScanError` |
 | `aurora-db` | Persistence | `MemoryCatalog` (Phase 0 placeholder), `Catalog` trait `[planned: SQLite in Phase 3]` |
 | `aurora-ui` | Toolkit-independent lyric view model | `Layout`, `LyricView::frame`, `FramePlan`, `WordPlan` |
-| `aurora-app` | Composition root / binary | `cargo run -p aurora-app` prints the demo frame plan |
+| `aurora-platform` | Linux platform services: the XDG implementation of the portability seam | `XdgDirectories`, `Settings` (+`Playback`, `Lyrics`, `Appearance`, `Performance`, `Library`), `logging`, `session::{detect_session, wayland_socket_ready}` |
+| `aurora-app` | Composition root / binary; the only crate allowed to depend on iced | `aurora`, `aurora --headless`, `aurora --demo [PATH]` |
 
 `cargo build`, `cargo fmt --check`, `cargo clippy -- -D warnings` and
-`cargo test` all pass on this tree (see `PHASE_LOG.md` for the exact output).
+`cargo test` (66 tests) all pass on this tree (see `PHASE_LOG.md`).
+
+### Boot sequence (Phase 1)
+
+```
+args ─► logging (AURORA_LOG) ─► XDG dirs ─► settings.toml ─► session probe
+                                                                   │
+                                          ┌────────────────────────┴───────────────┐
+                                          ▼                                        ▼
+                             iced window (Wayland)                     headless: scan + report
+                                          │
+                                 panic/connection failure
+                                          ▼
+                                  falls back to headless
+```
+
+Two rules are enforced here rather than documented as intentions:
+
+- **Settings are user input.** `settings.toml` is parsed with defaults on every
+  field, unknown keys ignored, every numeric value clamped, and written
+  atomically (`write` to `settings.toml.tmp`, then `rename`).
+- **A missing display is a mode, not a crash.** `session` checks the advertised
+  Wayland socket with one `connect(2)` before any toolkit code runs, because iced
+  *panics* (does not return an error) when the compositor connection fails; the
+  window call is additionally wrapped in `catch_unwind`.
 
 ---
 
