@@ -254,6 +254,13 @@ dependencies on Fedora and Android, and gives FTS5 for search.
 Phase 0 ships `aurora_db::MemoryCatalog` behind a `Catalog` trait so the engine
 and tests do not depend on SQLite yet.
 
+Decoder note (Phase 2): `symphonia` owns FLAC/ALAC/MP3/AAC/CAF, but RIFF and AIFF
+would pull `symphonia-format-riff` into the `extended` crate, which cannot be
+vendored offline. Both are therefore in-crate (`aurora-audio::wav`,
+`aurora-audio::aiff`) and share one sample-scaling function, so two independent
+chunk walks over identical audio must produce identical numbers - which is
+exactly what `fixtures/music/00 - Fixture Tone.{wav,aiff}` asserts.
+
 Cache layout comes from `AppDirectories` (`data_dir`, `config_dir`,
 `cache_dir`, `lyrics_dir`, `database_file`) — on desktop XDG, on Android the
 platform's scoped directories. Cached artefacts: imported lyrics (with their

@@ -80,18 +80,38 @@ Logging goes to stderr at `AURORA_LOG` level (`error|warn|info|debug|trace`);
   measured faster than egui on the same scene. Built Wayland-only offline: the
   X11 backend needs a `ctor` release that cannot be vendored here (see
   `scripts/README.md`).
-- **Audio:** Symphonia (FLAC/MP3/AAC/ALAC/CAF) plus an in-crate WAV decoder,
-  behind one `Decoder` trait, feeding a `PlaybackEngine` that publishes the
-  audio clock. CPAL for output is still missing (no ALSA in this sandbox), so
+- **Audio:** Symphonia (FLAC/MP3/AAC/ALAC/CAF) plus in-crate WAV and AIFF
+  decoders, behind one `Decoder` trait, feeding a `PlaybackEngine` that
+  publishes the audio clock. Every decoder can seek to, or before, a requested
+  position. CPAL for output is still missing (no ALSA in this sandbox), so
   playback runs against a simulated device: `aurora --decode <file>` and
-  `aurora --play <file>`. AIFF is not supported
-  yet: `symphonia-format-riff` needs a crate that cannot be vendored here.
+  `aurora --play <file>`. See the format table below for what is verified.
 - **Database:** SQLite via `rusqlite` (bundled), FTS5 for search.
 - **Tags:** `lofty` (pure Rust).
 - **Lyrics:** in-repo parsers — plain LRC, enhanced LRC, internal JSON; TTML
   planned; estimated word timing for line-only files.
 - **Android:** shared Rust core + UniFFI + Jetpack Compose (Strategy B),
   provisional until measured on a device.
+
+## Format support
+
+`Verified` means a decoder exists *and* a test decodes committed audio with it.
+MP3/AAC/ALAC/CAF build but no fixture exercises them: this sandbox cannot fetch
+an encoder for any of them, and a hand-written MP3 is not a serious proposition.
+
+| Format | Container / codec | Decoder | State |
+| --- | --- | --- | --- |
+| WAV | RIFF/WAVE, PCM 8/16/24/32 + float 32/64, `EXTENSIBLE` | `aurora-audio::wav` | Verified (`00 - Fixture Tone.wav`) |
+| AIFF | FORM/AIFF, AIFF-C `NONE`/`twos`/`sowt`/`fl32`/`fl64` | `aurora-audio::aiff` | Verified (`00 - Fixture Tone.aiff`) |
+| FLAC | native FLAC | Symphonia | Verified (`00 - Fixture Steps.flac`) |
+| ALAC | ALAC in CAF/M4A | Symphonia | Compiles, not exercised |
+| MP3 | MPEG-1/2/2.5 Layer III | Symphonia | Compiles, not exercised |
+| AAC | AAC-LC in ADTS/M4A | Symphonia | Compiles, not exercised |
+| CAF | Core Audio Format | Symphonia | Compiles, not exercised |
+| Ogg/Vorbis | — | — | Not supported: needs `symphonia-format-ogg`, not vendored |
+| Opus | — | — | Not supported, same reason |
+
+Rejected by name rather than guessed at: µ-law, A-law, ADPCM, IMA4, RF64.
 
 ## Not verified yet
 

@@ -152,8 +152,9 @@ CPAL output behind `AudioOutput`, with the clock driven by the device counter.
   and the clock is still driven by tests, not a device.
 - **MP3/AAC/ALAC/CAF are compiled in but never exercised** — no encoder on this
   machine can produce those files.
-- **AIFF is unsupported**: `symphonia-format-riff` (needed for WAV and AIFF)
-  depends on the `extended` crate, which cannot be obtained offline.
+- **AIFF was unsupported** at this point: `symphonia-format-riff` (needed for WAV
+  and AIFF) depends on the `extended` crate, which cannot be obtained offline.
+  Closed in Phase 2.6 by an in-crate AIFF/AIFF-C decoder.
 - No resampling, channel mapping, gapless playback or queue yet.
 
 ---
@@ -177,3 +178,41 @@ CPAL output behind `AudioOutput`, with the clock driven by the device counter.
   cpal remains blocked on the unfetchable `alsa-sys`.
 - No resampling, channel mapping, queue or gapless hand-off; `aurora-core`'s
   `Transport` state machine is not wired to the engine yet.
+
+---
+
+## Phase 2.6 — AIFF in-crate — DONE (2026-11-13)
+
+### What works (verified by running it)
+
+- `aurora-audio::aiff::AiffDecoder`: `FORM`/`AIFF` and `FORM`/`AIFC`. `COMM`
+  parsing with the 80-bit extended-float sample rate, `SSND` with its `offset`
+  field, odd-chunk padding, `numSampleFrames` trimming, PCM 8/16/24/32-bit
+  (signed 8-bit, unlike RIFF) and IEEE float 32/64, plus `NONE`/`twos`/`sowt`/
+  `fl32`/`fl64` AIFF-C compressions. Frame-exact `seek`, `total_frames`.
+- Unimplemented AIFF-C compressions fail as `DecodeError::Unsupported` with the
+  codec name (`AIFF-C compression 'ulaw' is not implemented`), never as silence.
+- `DecodeError` now lives in `aurora-audio::error` with AIFF variants and a
+  `path()` accessor; `crate::wav::DecodeError` is a re-export, so nothing broke.
+- New fixture `fixtures/music/00 - Fixture Tone.aiff` (4854 B) holding the same
+  audio as the WAV fixture; `make-aiff.py` regenerates it deterministically.
+
+```text
+$ cargo run -q -p aurora-app -- --decode "fixtures/music/00 - Fixture Tone.aiff"
+  48000 Hz, 1 channel(s), 16-bit integer PCM
+  2400 frames, 0.050 s
+  peak 0.2500 (-12.0 dBFS), rms 0.1768
+```
+
+`cargo test --workspace`: **118 tests** (was 102), clippy `-D warnings` clean,
+rustfmt clean. The equivalence test decodes the same audio through `WavDecoder`
+and `AiffDecoder` and compares every sample to within 1e-7.
+
+### What does not work / is not verified
+
+- AIFF-C `sowt`/`fl32` are tested from in-memory files only; no committed AIFF-C
+  fixture exists because nothing here can write one.
+- Compressed AIFF-C (µ-law, A-law, IMA4) is not implemented - it is named in the
+  error instead.
+- Still no audible output (no ALSA/`cpal`), no resampling, no channel mapping, no
+  queue, no gapless hand-off.

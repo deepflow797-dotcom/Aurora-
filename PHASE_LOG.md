@@ -279,7 +279,7 @@ subdirectory per crate name. Two things had to give:
 - **`wav`/`aiff` features are off.** They pull `symphonia-format-riff`, which
   depends on the `extended` crate; that crate has no obtainable source here
   (GitHub 404 on every plausible repo), so WAV stays on the in-crate decoder and
-  **AIFF is not supported yet**.
+  **AIFF was, at this point, not supported yet** — closed in Phase 2.6 below.
 - **The FLAC fixture is generated, not borrowed.** There is no encoder on this
   machine and `flacenc` cannot be vendored (it needs `heapless` → `built`), so
   `scripts/fixtures/make-flac.py` writes a small, fully specified FLAC by hand:
@@ -326,7 +326,8 @@ yield frame 4095 (`0.25`, the last of block 0) and then silence.
 - **MP3/AAC/ALAC/CAF are compiled in but not exercised**: no encoder here can
   produce those files either, so their code paths are untested (the FLAC path
   exercises everything except the specific codecs).
-- **AIFF is not supported** (see above); the spec lists it, so this is a real gap.
+- **AIFF was not supported** at this point (see above); the spec lists it, so it
+  was a real gap until Phase 2.6.
 - No resampling, channel mapping, gapless playback or seek yet.
 
 ---
@@ -377,3 +378,75 @@ source stopping playback instead of being retried forever.
   engine assumes the device agrees.
 - **No queue, no gapless hand-off, no underrun handling**: `PlaybackEngine` plays
   one source. The transport state machine in `aurora-core` is not wired to it yet.
+
+---
+
+## Phase 2.6 — AIFF, and the error type gets a home (2026-11-13)
+
+The spec (§17) lists AIFF next to WAV and FLAC, and the previous phase closed it
+as "unsupported: `symphonia-format-riff` needs the `extended` crate". That was an
+accurate statement about *symphonia's* feature list, not about what this project
+can do: AIFF is linear PCM in a chunked container, i.e. the same problem WAV
+already solved here. So it is now decoded in-crate.
+
+### Delivered
+
+- **`aurora-audio::aiff`** — an `AiffDecoder` over `FORM`/`AIFF` and
+  `FORM`/`AIFC`:
+  - `COMM` parsing, including the 80-bit IEEE 754 **extended float** sample rate
+    (bias 16383, explicit leading mantissa bit - not an `f64` in disguise);
+  - AIFF-C compression types `NONE`, `twos`, `sowt` (little-endian PCM),
+    `fl32`/`FL32`, `fl64`/`FL64`; anything else (µ-law, A-law, IMA4 …) is
+    `DecodeError::Unsupported` naming the codec it found;
+  - PCM 8/16/24/32-bit, signed as the format defines - which is the one place
+    AIFF and WAV disagree beyond byte order: RIFF stores 8-bit samples *unsigned*;
+  - `SSND` `offset` honoured, odd-sized chunks padded, `numSampleFrames` winning
+    over a longer `SSND` body, truncated files clamped instead of read past;
+  - frame-exact `seek` (`SeekOutOfRange` past the end) and `total_frames`.
+- **`aurora-audio::error`** — `DecodeError` moved out of `wav.rs` (it had quietly
+  become the crate's error vocabulary) and grew `NotAiff`/`MissingComm`/
+  `MissingSsnd` plus `DecodeError::path()`. `crate::wav::DecodeError` still
+  resolves, so no call site changed.
+- **One sample-scaling function.** `sample_to_f32(sample, SampleLayout)` is shared
+  by both decoders; the layout travels as a value (`big_endian`, `signed_8_bit`)
+  rather than as two booleans - the first draft of this refactor had the 8-bit
+  branch identical on both sides, and the AIFF test caught it.
+- **`fixtures/music/00 - Fixture Tone.aiff`** (4854 B) — the same 440 Hz tone as
+  the WAV fixture, written by `scripts/fixtures/make-aiff.py`. Two containers, two
+  byte orders, one expected result.
+- `open()` dispatches `aiff`/`aif`/`aifc`; `--decode` and `--play` needed no
+  changes beyond that.
+
+### Measured here
+
+```text
+$ cargo run -q -p aurora-app -- --decode "fixtures/music/00 - Fixture Tone.aiff"
+fixtures/music/00 - Fixture Tone.aiff
+  48000 Hz, 1 channel(s), 16-bit integer PCM
+  2400 frames, 0.050 s
+  peak 0.2500 (-12.0 dBFS), rms 0.1768
+
+$ cargo run -q -p aurora-app -- --play "fixtures/music/00 - Fixture Tone.aiff"
+fixtures/music/00 - Fixture Tone.aiff
+  played 0:00.050 of 0:00.050 in 6 device callbacks (480 frames each)
+  clock position at end: 0:00.050
+```
+
+The `--decode` line is byte-identical to the WAV fixture's, which is the point.
+
+`cargo test --workspace`: **118 tests** (was 102), clippy `-D warnings` clean,
+rustfmt clean. The 16 new tests: extended-float round trip for six common rates
+plus the exact bytes of 44.1/48 kHz headers, 16/24-bit and float decode, 8-bit
+signed-vs-unsigned (both decoders, one test), `sowt`, `SSND` offset with an
+odd-sized chunk in front of it, declared-frame-count trimming, seek to the end /
+to frame 480 / past the end, non-FORM rejection, missing `COMM`/`SSND`, an
+unimplemented compression naming itself, declared-but-absent bytes, the error
+type's path helper, and the fixture equivalence test that decodes the same audio
+through both decoders and compares every sample.
+
+### Not done / not verified
+
+- `aifc` files with `sowt` are tested from memory, not from a committed fixture
+  (no encoder here writes AIFF-C); the compressed AIFF-C families stay
+  unimplemented **and are reported by name**.
+- Still no audible output, no resampling, no channel mapping, no queue/gapless.

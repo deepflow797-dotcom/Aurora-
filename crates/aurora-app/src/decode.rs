@@ -117,6 +117,22 @@ mod tests {
     }
 
     #[test]
+    fn the_aiff_fixture_reports_the_same_numbers_as_the_wav_one() {
+        let aiff = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/music/00 - Fixture Tone.aiff");
+        let summary = inspect(&aiff).expect("decode aiff");
+        let wav = inspect(&fixture()).expect("decode wav");
+        // Same audio, two containers and two byte orders: every number must
+        // match, or one of the decoders has a scaling bug.
+        assert_eq!(summary.format, wav.format);
+        assert_eq!(summary.frames, 2_400);
+        assert_eq!(summary.duration, std::time::Duration::from_millis(50));
+        assert!((summary.peak - wav.peak).abs() < 1e-6, "{}", summary.peak);
+        assert!((summary.rms - wav.rms).abs() < 1e-6, "{}", summary.rms);
+        assert!((summary.peak - 0.25).abs() < 0.01, "peak {}", summary.peak);
+    }
+
+    #[test]
     fn inspects_the_flac_fixture_through_the_same_path() {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/music/00 - Fixture Steps.flac");

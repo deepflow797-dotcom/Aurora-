@@ -7,8 +7,8 @@
 //!
 //! Two consequences of the offline sandbox are visible in the feature list
 //! (`Cargo.toml`): WAV/AIFF are *not* handled by `symphonia-format-riff` (it
-//! needs the `extended` crate, which cannot be fetched here), so WAV goes through
-//! [`crate::wav`] and AIFF is not supported yet.
+//! needs the `extended` crate, which cannot be fetched here), so those two go
+//! through [`crate::wav`] and [`crate::aiff`] instead.
 
 use std::fs::File;
 use std::path::{Path, PathBuf};

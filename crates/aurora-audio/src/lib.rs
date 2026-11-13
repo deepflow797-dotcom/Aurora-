@@ -13,21 +13,26 @@
 //! The decoder never owns the position; the device does. That is what keeps the
 //! lyrics in sync on a machine with a 512-frame PipeWire quantum.
 
+pub mod aiff;
 pub mod engine;
+pub mod error;
 pub mod symphonia_decoder;
 pub mod wav;
 
 pub use engine::{AudioSource, DecoderSource, NullDevice, PlaybackEngine};
 
+pub use aiff::AiffDecoder;
+pub use error::DecodeError;
 pub use symphonia_decoder::SymphoniaDecoder;
-pub use wav::{DecodeError, Decoder, Format, WavDecoder};
+pub use wav::{Decoder, Format, WavDecoder};
 
 use std::path::Path;
 
 /// Opens `path` with the right decoder for its extension.
 ///
-/// WAV goes to the in-crate decoder (it is exact, allocation-light and does not
-/// depend on a container parser); everything else goes to `symphonia`.
+/// WAV and AIFF go to the in-crate decoders; they are exact, need no container
+/// parser and are the two formats this crate can test byte by byte. Everything
+/// else goes to `symphonia`.
 ///
 /// # Errors
 ///
@@ -41,6 +46,7 @@ pub fn open(path: &Path) -> Result<Box<dyn Decoder>, DecodeError> {
         .unwrap_or_default();
     match extension.as_str() {
         "wav" | "wave" => Ok(Box::new(WavDecoder::open(path)?)),
+        "aiff" | "aif" | "aifc" => Ok(Box::new(AiffDecoder::open(path)?)),
         "flac" | "m4a" | "alac" | "mp3" | "aac" | "caf" | "mp4" => {
             Ok(Box::new(SymphoniaDecoder::open(path)?))
         }

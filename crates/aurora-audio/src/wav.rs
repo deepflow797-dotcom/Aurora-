@@ -92,51 +92,7 @@ pub trait Decoder: Send {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum DecodeError {
-    #[error("cannot read {path}: {source}")]
-    Io {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
-    #[error("{path} is not a RIFF/WAVE file")]
-    NotWav { path: PathBuf },
-    #[error("{path} has no fmt chunk")]
-    MissingFmt { path: PathBuf },
-    #[error("{path} has no data chunk")]
-    MissingData { path: PathBuf },
-    #[error("unsupported WAV encoding {format:#06x} with {bits} bits per sample")]
-    UnsupportedFormat { format: u16, bits: u16 },
-    #[error("{context} is truncated: wanted {wanted} bytes, found {available}")]
-    Truncated {
-        context: &'static str,
-        wanted: u64,
-        available: u64,
-    },
-    #[error("invalid WAV data: {0}")]
-    Invalid(&'static str),
-    #[error("{path} contains no audio track")]
-    NoAudioTrack { path: PathBuf },
-    #[error("{path} does not describe its sample rate or channels")]
-    MissingFormatInfo { path: PathBuf },
-    #[error("{path} uses a format this build cannot decode: {detail}")]
-    Unsupported { path: PathBuf, detail: String },
-    #[error("cannot decode {path}: {detail}")]
-    Symphonia { path: PathBuf, detail: String },
-    #[error("{path} has an extension no decoder here handles")]
-    UnknownExtension { path: PathBuf },
-    #[error("cannot seek {path} to {position:?}: the stream is not seekable")]
-    SeekUnsupported {
-        path: PathBuf,
-        position: std::time::Duration,
-    },
-    #[error("cannot seek {path} to {position:?}: past the end of the stream")]
-    SeekOutOfRange {
-        path: PathBuf,
-        position: std::time::Duration,
-    },
-}
+pub use crate::error::DecodeError;
 
 /// A parsed WAV file: format plus the byte range of its samples.
 #[derive(Debug, Clone)]
@@ -387,38 +343,123 @@ impl Decoder for WavDecoder {
             .enumerate()
             .take(wanted)
         {
-            out[index] = to_f32(sample, self.format);
+            out[index] = sample_to_f32(sample, SampleLayout::riff(self.format));
         }
         self.cursor += byte_count;
         Ok(wanted)
     }
 }
 
-fn to_f32(sample: &[u8], format: Format) -> f32 {
-    match (format.is_float, format.bits_per_sample) {
-        (true, 32) => f32::from_le_bytes([sample[0], sample[1], sample[2], sample[3]]),
-        (true, 64) => {
-            let value = f64::from_le_bytes([
-                sample[0], sample[1], sample[2], sample[3], sample[4], sample[5], sample[6],
-                sample[7],
-            ]);
-            value as f32
+/// How the bytes of one sample are laid out on disk.
+///
+/// WAV and AIFF agree on everything except two details: byte order, and the fact
+/// that AIFF stores 8-bit PCM **signed** while RIFF stores it unsigned. Rather
+/// than pass two booleans around (and get the 8-bit case wrong the first time,
+/// as happened here), the layout travels as one value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SampleLayout {
+    pub bits: u16,
+    pub is_float: bool,
+    pub big_endian: bool,
+    pub signed_8_bit: bool,
+}
+
+impl SampleLayout {
+    /// The layout of a RIFF/WAVE `fmt ` chunk.
+    pub(crate) fn riff(format: Format) -> Self {
+        Self {
+            bits: format.bits_per_sample,
+            is_float: format.is_float,
+            big_endian: false,
+            signed_8_bit: false,
         }
-        (false, 8) => (f32::from(sample[0]) - 128.0) / 128.0,
+    }
+
+    /// The layout of an AIFF `COMM` chunk.
+    pub(crate) fn aiff(format: Format, big_endian: bool) -> Self {
+        Self {
+            bits: format.bits_per_sample,
+            is_float: format.is_float,
+            big_endian,
+            signed_8_bit: true,
+        }
+    }
+
+    /// Bytes one sample occupies.
+    pub(crate) fn bytes(self) -> u64 {
+        u64::from(self.bits) / 8
+    }
+}
+
+/// Converts one stored sample to `f32` in `-1.0 ..= 1.0`.
+///
+/// The scaling rule lives here once so both decoders agree to the last bit: the
+/// committed WAV and AIFF fixtures hold identical audio, and the tests assert
+/// that the two decoders report identical levels.
+pub(crate) fn sample_to_f32(sample: &[u8], layout: SampleLayout) -> f32 {
+    let read = |range: std::ops::Range<usize>| -> [u8; 8] {
+        let mut bytes = [0_u8; 8];
+        bytes[..range.len()].copy_from_slice(&sample[range]);
+        bytes
+    };
+
+    match (layout.is_float, layout.bits) {
+        (true, 32) => {
+            let bytes = read(0..4);
+            let bytes: [u8; 4] = bytes[..4].try_into().expect("four bytes");
+            if layout.big_endian {
+                f32::from_be_bytes(bytes)
+            } else {
+                f32::from_le_bytes(bytes)
+            }
+        }
+        (true, 64) => {
+            let bytes = read(0..8);
+            if layout.big_endian {
+                f64::from_be_bytes(bytes) as f32
+            } else {
+                f64::from_le_bytes(bytes) as f32
+            }
+        }
+        (false, 8) => {
+            if layout.signed_8_bit {
+                f32::from(sample[0] as i8) / 128.0
+            } else {
+                (f32::from(sample[0]) - 128.0) / 128.0
+            }
+        }
         (false, 16) => {
-            let value = i16::from_le_bytes([sample[0], sample[1]]);
+            let bytes = read(0..2);
+            let bytes: [u8; 2] = bytes[..2].try_into().expect("two bytes");
+            let value = if layout.big_endian {
+                i16::from_be_bytes(bytes)
+            } else {
+                i16::from_le_bytes(bytes)
+            };
             f32::from(value) / 32_768.0
         }
         (false, 24) => {
-            // Sign-extend the 24-bit little-endian value into an i32.
-            let value = i32::from_le_bytes([0, sample[0], sample[1], sample[2]]) >> 8;
+            // Sign-extend the 24-bit value into an i32.
+            let value = if layout.big_endian {
+                let bytes = read(0..3);
+                i32::from_be_bytes([bytes[0], bytes[1], bytes[2], 0]) >> 8
+            } else {
+                let bytes = read(0..3);
+                i32::from_le_bytes([0, bytes[0], bytes[1], bytes[2]]) >> 8
+            };
             value as f32 / 8_388_608.0
         }
         (false, 32) => {
-            let value = i32::from_le_bytes([sample[0], sample[1], sample[2], sample[3]]);
+            let bytes = read(0..4);
+            let bytes: [u8; 4] = bytes[..4].try_into().expect("four bytes");
+            let value = if layout.big_endian {
+                i32::from_be_bytes(bytes)
+            } else {
+                i32::from_le_bytes(bytes)
+            };
             value as f32 / 2_147_483_648.0
         }
-        // `parse_fmt` rejects anything else, so this is unreachable.
+        // The parsers reject anything else, so this is unreachable.
         _ => 0.0,
     }
 }
