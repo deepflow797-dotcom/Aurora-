@@ -40,6 +40,58 @@ GIT_SOURCES: dict[str, tuple[str, list[str]]] = {
     "emath": ("emilk/egui", ["0.37.0", "v0.37.0"]),
     "ecolor": ("emilk/egui", ["0.37.0", "v0.37.0"]),
     "epaint_default_fonts": ("emilk/egui", ["0.37.0", "v0.37.0"]),
+    "iced": ("iced-rs/iced", ["0.14.0"]),
+    "window_clipboard": "hecrj/window_clipboard",
+    "clipboard_wayland": "hecrj/window_clipboard",
+    "clipboard_x11": "hecrj/window_clipboard",
+    "mundy": "tautropfli/mundy",
+    "tiny-xlib": "rust-windowing/tiny-xlib",
+    "smithay-clipboard": "Smithay/smithay-clipboard",
+    "xkeysym": "rust-windowing/xkeysym",
+    "xcursor": "esposm03/xcursor-rs",
+    "thiserror-impl": "dtolnay/thiserror",
+    "ctor": "mmastrac/rust-ctor",
+    "memoffset": "Gilnaa/memoffset",
+    "servo_arc": "servo/servo",
+    "utf8_iter": "hsivonen/utf8_iter",
+    "unicode-joining-type": "harfbuzz/unicode-joining-type",
+    "kurbo-011": "linebender/kurbo",
+    "enumflags2": "meithecatte/enumflags2",
+    "enumflags2_derive": "meithecatte/enumflags2",
+    "ordered-stream": "danieldg/ordered-stream",
+    "async-broadcast": "smol-rs/async-broadcast",
+    "async-recursion": "dsherret/async-recursion",
+    "hex": "KokaKiwi/rust-hex",
+    "sha1": "RustCrypto/hashes",
+    "sha2": "RustCrypto/hashes",
+    "digest": "RustCrypto/traits",
+    "serde_repr": "dtolnay/serde-repr",
+    "uds_windows": "haraldh/uds_windows",
+    "endi": "zeenix/endi",
+    "xdg-home": "zeenix/xdg-home",
+    "zvariant_utils": "dbus2/zbus",
+    "wayland-cursor": "smithay/wayland-rs",
+    "wayland-protocols-experimental": "smithay/wayland-rs",
+    "wayland-egl": "smithay/wayland-rs",
+    "wayland-protocols-misc": "smithay/wayland-rs",
+    "wayland-protocols-wlr": "smithay/wayland-rs",
+    "x11": "AltF4/rust-x11",
+    "url": "servo/rust-url",
+    "idna": "servo/rust-url",
+    "percent-encoding": "servo/rust-url",
+    "form_urlencoded": "servo/rust-url",
+    "calloop": "Smithay/calloop",
+    "wayland-csd-frame": "rust-windowing/wayland-csd-frame",
+    "xkbcommon-dl": "rust-windowing/xkbcommon-dl",
+    "android-build": "project-robius/android-build",
+    "zbus": "dbus2/zbus",
+    "zvariant": "dbus2/zbus",
+    "zbus_macros": "dbus2/zbus",
+    "zbus_names": "dbus2/zbus",
+    "zvariant_derive": "dbus2/zbus",
+    "beul": "tautropfli/beul",
+    "iced_winit": ("iced-rs/iced", ["0.14.0"]),
+    "iced_program": ("iced-rs/iced", ["0.14.0"]),
     "iced_core": ("iced-rs/iced", ["0.14.0"]),
     "iced_debug": ("iced-rs/iced", ["0.14.0"]),
     "iced_futures": ("iced-rs/iced", ["0.14.0"]),
@@ -150,15 +202,15 @@ GIT_SOURCES: dict[str, tuple[str, list[str]]] = {
     "wayland-protocols-plasma": "smithay/wayland-rs",
     "calloop": "Smithay/calloop",
     "calloop-wayland-source": "Smithay/calloop-wayland-source",
-    "sctk-adwaita": "Smithay/client-toolkit",
+    "sctk-adwaita": "PolyMeilex/sctk-adwaita",
     "smithay-client-toolkit": "Smithay/client-toolkit",
     "xkbcommon-dl": "rust-windowing/xkbcommon-dl",
-    "as-raw-xcb-connection": "PsychoHack/as-raw-xcb-connection",
+    "as-raw-xcb-connection": "psychon/as-raw-xcb-connection",
     "rustix": "bytecodealliance/rustix",
     "linux-raw-sys": "sunfishcode/linux-raw-sys",
     "io-lifetimes": "sunfishcode/io-lifetimes",
     "errno": "lsc-project/errno-rs",
-    "x11-dl": "AltF4/x11-dl",
+    "x11-dl": "inkreasing/x11-dl",
     "x11rb": "psychon/x11rb",
     "xkbcommon": "xkbcommon/xkbcommon-rs",
     "memchr": "BurntSushi/memchr",
@@ -444,7 +496,14 @@ def normalize_manifest(dest: Path, name: str, vers: str, repo_root: Path | None 
     targets = data.get("target") or {}
     for key in list(targets):
         lowered = key.lower()
-        if any(bad in lowered for bad in NON_LINUX) and "not(" not in lowered:
+        # Drop tables that only exist for other platforms, but keep anything a
+        # Unix/Linux build could need (e.g. `cfg(any(unix, target_os = "fuchsia"))`).
+        if (
+            any(bad in lowered for bad in NON_LINUX)
+            and "not(" not in lowered
+            and "unix" not in lowered
+            and "linux" not in lowered
+        ):
             targets.pop(key)
     if targets:
         data["target"] = targets
@@ -456,6 +515,24 @@ def normalize_manifest(dest: Path, name: str, vers: str, repo_root: Path | None 
         val = pkg.get(key)
         if isinstance(val, str) and (val.startswith("..") or not (dest / val).exists()):
             pkg.pop(key, None)
+    # Path dependencies point at sibling directories of the upstream repo that do
+    # not exist in a vendored copy; keep the registry version instead.
+    for section in ("dependencies", "build-dependencies"):
+        for alias, spec in list((data.get(section) or {}).items()):
+            if isinstance(spec, dict) and "path" in spec:
+                if "version" in spec:
+                    spec.pop("path")
+                else:
+                    data[section].pop(alias)
+    for table in (data.get("target") or {}).values():
+        for section in ("dependencies", "build-dependencies"):
+            for alias, spec in list((table.get(section) or {}).items()):
+                if isinstance(spec, dict) and "path" in spec:
+                    if "version" in spec:
+                        spec.pop("path")
+                    else:
+                        table[section].pop(alias)
+
     features = data.get("features") or {}
     deps = set((data.get("dependencies") or {}).keys())
     deps |= set((data.get("build-dependencies") or {}).keys())
@@ -523,19 +600,31 @@ def discover_tags(repo: str) -> list[str]:
         _, _, ref = line.partition("refs/tags/")
         if ref and ref not in names:
             names.append(ref)
-    names.extend(["branch:main", "branch:master"])
+    # The repo's real default branch: some crates only publish from it.
+    out = subprocess.run(
+        ["curl", "-sS", f"https://api.github.com/repos/{repo}"],
+        capture_output=True,
+        text=True,
+    ).stdout
+    try:
+        default_branch = json.loads(out).get("default_branch")
+    except Exception:
+        default_branch = None
+    for branch in ["main", "master", default_branch]:
+        if branch:
+            tag = f"branch:{branch}"
+            if tag not in names:
+                names.append(tag)
     _TAG_CACHE[repo] = names
     return names
 
 
 def tag_version(name: str, tag: str) -> str:
-    """Version carried by a tag such as `v0.4.0`, `egui-v0.4.0`, `0.4.0`."""
+    """Version carried by a tag: `v0.4.0`, `egui-v0.4.0`, `ctor-1.0.13`, `0.4.0`."""
     if tag.startswith("branch:"):
         return ""
-    tail = tag.rsplit("-v", 1)[-1] if "-v" in tag else tag.lstrip("v")
-    if re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+([-.+][0-9A-Za-z.+-]+)?", tail):
-        return tail
-    return ""
+    match = re.search(r"([0-9]+\.[0-9]+\.[0-9]+(?:[-.+][0-9A-Za-z.]+)?)$", tag)
+    return match.group(1) if match else ""
 
 
 def ordered_tags(name: str, repo: str, req: str) -> list[str]:
@@ -545,10 +634,15 @@ def ordered_tags(name: str, repo: str, req: str) -> list[str]:
     good = [(v, tg) for v, tg in scored if v and satisfies(v, req)]
     good.sort(key=lambda pair: vkey(pair[0]), reverse=True)
     rest = [tg for v, tg in scored if not (v and satisfies(v, req))]
-    # A repo's default branch is usually ahead of its newest release tag.
     head = [tg for tg in rest if tg.startswith("branch:")]
     rest = [tg for tg in rest if not tg.startswith("branch:")]
-    return head + [tg for _, tg in good] + rest
+    if name in NO_BRANCH:
+        return [tg for _, tg in good] + rest
+    if name in PREFER_HEAD:
+        # Some repos publish new releases from the default branch without tags
+        # (lyon), so the branch really is the best source for those crates.
+        return head + [tg for _, tg in good] + rest
+    return [tg for _, tg in good] + head + rest
 
 def fetch_tag(repo: str, tag: str) -> Path | None:
     CACHE.mkdir(parents=True, exist_ok=True)
@@ -606,6 +700,44 @@ def req_floor(req: str) -> str | None:
     return None
 
 
+# Crates where the default branch is *newer* than the published releases and has
+# already broken API compatibility inside a patch series (wayland-rs main tracks
+# unreleased 0.3x). Always take a release tag for these.
+NO_BRANCH = {
+    "raw-window-handle",
+    "softbuffer",
+    "tiny-xlib",
+    "bytemuck",
+    "wayland-client",
+    "wayland-backend",
+    "wayland-scanner",
+    "wayland-sys",
+    "wayland-cursor",
+    "wayland-server",
+    "wayland-protocols",
+    "wayland-protocols-wlr",
+    "wayland-protocols-plasma",
+    "wayland-protocols-misc",
+    "wayland-protocols-experimental",
+    "smithay-client-toolkit",
+    "smithay-clipboard",
+    "sctk-adwaita",
+    "wayland-csd-frame",
+}
+
+# Crates whose default branch is ahead of every release tag (see ordered_tags).
+PREFER_HEAD = {
+    "lyon_path",
+    "lyon_geom",
+    "lyon_tessellation",
+    "lyon_algorithms",
+    "lyon",
+    "fontconfig-parser",
+    "swash",
+    "yazi",
+    "zeno",
+}
+
 FORCE_GIT = {"cc", "cc-1", "libc"}
 
 
@@ -645,6 +777,44 @@ def apply_source_patches(name: str, vers: str) -> None:
                 print(f"  patched {path.relative_to(root)}")
 
 
+
+# Some crates keep their protocol XMLs in a git submodule, which codeload
+# tarballs do not include. Copy them from the upstream protocol repositories so
+# the `wayland_scanner` proc macros have something to read.
+EXTRA_TREES = {
+    "wayland-protocols": ("wayland-mirror/wayland-protocols", ["stable", "staging", "unstable"], "protocols"),
+    "wayland-protocols-wlr": ("swaywm/wlr-protocols", ["unstable"], "wlr-protocols"),
+    "wayland-protocols-plasma": (
+        "KDE/plasma-wayland-protocols",
+        ["src/protocols"],
+        "plasma-wayland-protocols/src/protocols",
+    ),
+}
+
+
+def graft_extra_trees(name: str, vers: str) -> None:
+    spec = EXTRA_TREES.get(name)
+    if not spec:
+        return
+    repo, subdirs, dest_rel = spec
+    root = VENDOR / f"{name}-{vers}" / dest_rel
+    if root.is_dir() and any(root.iterdir()):
+        return
+    tree = fetch_tag(repo, "branch:main") or fetch_tag(repo, "branch:master")
+    if tree is None:
+        return
+    for sub in subdirs:
+        source = tree / sub
+        if not source.is_dir():
+            continue
+        # `src/protocols` copies its *contents*; plain dirs keep their names.
+        if len(sub.split("/")) > 1:
+            shutil.copytree(source, root, dirs_exist_ok=True)
+        else:
+            shutil.copytree(source, root / sub, dirs_exist_ok=True)
+    print(f"  grafted protocol xml for {name}-{vers} -> {dest_rel}")
+
+
 def graft_extra_files(name: str, vers: str) -> None:
     spec = EXTRA_FILES.get(name)
     if not spec:
@@ -671,9 +841,11 @@ def provide(name: str, req: str) -> bool:
         vers = good[-1]
         if (VENDOR / f"{name}-{vers}").exists():
             graft_extra_files(name, vers)
+            graft_extra_trees(name, vers)
             return True
         installed = bool(install(MIRROR / f"{name}-{vers}", name, vers))
         graft_extra_files(name, vers)
+        graft_extra_trees(name, vers)
         apply_source_patches(name, vers)
         return installed
     if name in GIT_SOURCES:
@@ -701,9 +873,11 @@ def provide(name: str, req: str) -> bool:
                 continue
             if (VENDOR / f"{name}-{vers}").exists():
                 graft_extra_files(name, vers)
+                graft_extra_trees(name, vers)
                 return True
             install(crate, name, vers, tree)
             graft_extra_files(name, vers)
+            graft_extra_trees(name, vers)
             apply_source_patches(name, vers)
             return True
         # Fallback: a repo whose tags stop before the version Cargo wants.

@@ -47,8 +47,47 @@ local directory source:
   `FORCE_GIT` lists crates that must come from git because the mirror copy mixes
   files from two releases (`cc`, `libc`).
 
-  `SOURCE_PATCHES` documents the two source fixes currently needed
+  Two curated lists steer tag choice, because picking the wrong tree inside a
+  compatible semver range produces code that does not compile:
+
+  | List | Meaning |
+  | --- | --- |
+  | `PREFER_HEAD` | the default branch *is* the best source (lyon publishes releases from `main` without tags) |
+  | `NO_BRANCH` | the default branch is newer than any release and already breaks API compatibility inside a patch series (`wayland-rs` main tracks unreleased 0.3x, `softbuffer` main is a 0.5-era rewrite) — always take a release tag |
+
+  `path = "../crate"` entries in a dependency table are stripped (they point at
+  sibling directories of the upstream repo that do not exist in a flat vendor
+  tree); the registry version of the same dependency is kept. Without this,
+  `wayland-backend`'s path dependency on `wayland-sys` can never resolve.
+
+  `SOURCE_PATCHES` documents the source fixes currently needed
   (`cosmic-text` `Blob::new` bound, see the spike README).
+
+  `EXTRA_FILES` grafts generated files that are not checked in upstream
+  (`unicode-linebreak`'s `tables.rs`). `EXTRA_TREES` grafts submodule contents
+  that codeload tarballs do not contain — the Wayland protocol XML in
+  `wayland-protocols`, `wayland-protocols-wlr` and `wayland-protocols-plasma`.
+  Without those the `wayland_scanner` proc macro panics 108 times at build time.
+
+### iced 0.14 offline recipe
+
+```toml
+iced = { version = "0.14", default-features = false, features = [
+  "tiny-skia", "wayland", "advanced-shaping", "crisp",
+  "linux-theme-detection", "thread-pool",
+] }
+```
+
+Verified building and linking in this sandbox (2026-11-13). Notes:
+
+- `tiny-skia` is the software rasteriser the spike measured; leave `wgpu` off
+  (no GPU in the sandbox, and it drags in a second renderer).
+- `x11` is **deliberately omitted**. It pulls `tiny-xlib` → `ctor ^0.10`, and
+  `mmastrac/rust-ctor` only tags 0.13+/1.0, so an X11 build cannot be vendored
+  offline today. The app therefore boots through Wayland only; see
+  `PHASE_LOG.md` for the follow-up. Add `"x11"` back once a 0.10-compatible
+  `ctor` source exists.
+- `wayland` is required by `iced_tiny_skia`'s softbuffer surface.
 
 Usage:
 
@@ -56,6 +95,7 @@ Usage:
 scripts/vendor/fetch-mirror.sh                 # once per machine / sandbox reset
 python3 scripts/vendor/vendor.py .             # the app workspace
 python3 scripts/vendor/vendor.py spikes/ui-spike
+python3 scripts/vendor/vendor.py /tmp/iced-probe   # iced 0.14 smoke probe
 ```
 
 Both commands are idempotent: already-vendored crates are skipped and Cargo is
