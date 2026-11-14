@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -28,6 +30,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,8 +39,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
@@ -187,6 +196,8 @@ fun AuroraScreen(
                 )
             }
 
+            LyricsPanel(ui.lyrics, Modifier.height(220.dp))
+
             // Say it on screen: the timeline is real, the sound is not.
             Text(
                 text = snapshot?.output ?: stringResource(R.string.simulated_output),
@@ -229,6 +240,80 @@ fun AuroraScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * The lyric column.
+ *
+ * Everything here is a *rendering* of the plan Rust produced: opacity from
+ * [LyricLine.activation], the karaoke fill from [LyricWord.activation], the active
+ * line from `activeLine`. When a line is not active it stays dim, which is what
+ * makes the current line readable at a glance on a phone held at arm's length.
+ *
+ * BiDi comes for free: Compose shapes each line with cosmic-text-like logic and
+ * applies the paragraph direction per string, so mixed Arabic/English lines are
+ * laid out correctly without a Kotlin-side bidi pass.
+ */
+@Composable
+private fun LyricsPanel(lyrics: Lyrics?, modifier: Modifier = Modifier) {
+    val state = rememberLazyListState()
+    val active = lyrics?.activeLine
+    LaunchedEffect(active) {
+        if (active != null) {
+            // Keep the sung line roughly centred; the native side owns the spring,
+            // this only follows it so the list does not drift off-screen.
+            state.animateScrollToItem(active.coerceAtLeast(0))
+        }
+    }
+
+    Box(
+        modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        when {
+            lyrics == null -> Unit
+            !lyrics.available -> Text(
+                text = "no lyrics" + if (lyrics.tried.isEmpty()) "" else " (looked for ${lyrics.tried.size} file(s))",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            else -> LazyColumn(state = state) {
+                items(lyrics.lines) { line ->
+                    Text(
+                        text = lineText(line, MaterialTheme.colorScheme.primary),
+                        fontSize = if (line.active) 20.sp else 16.sp,
+                        fontWeight = if (line.active) FontWeight.SemiBold else FontWeight.Normal,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Builds one line, tinting each word by its own activation (karaoke fill). */
+private fun lineText(line: LyricLine, accent: Color): AnnotatedString = buildAnnotatedString {
+    if (line.words.isEmpty()) {
+        append(line.text)
+        return@buildAnnotatedString
+    }
+    line.words.forEachIndexed { index, word ->
+        if (index > 0) append(' ')
+        withStyle(
+            SpanStyle(
+                color = accent.copy(
+                    alpha = if (line.active) 0.35f + 0.65f * word.activation else 0f
+                )
+            )
+        ) {
+            append(word.text)
         }
     }
 }

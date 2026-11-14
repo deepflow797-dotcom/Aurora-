@@ -538,3 +538,64 @@ and without `--features jni-bridge`, rustfmt clean.
   read. `content://` URIs are the `StorageBackend` seam, not yet implemented.
 - **No foreground service, media notification or audio focus** - Kotlin glue that
   only makes sense once there is real audio.
+
+---
+
+## Phase 2.8 — lyrics in the app core — **WRITTEN, NOT COMPILED** (2026-11-13)
+
+> **Read this before trusting the section.** The sandbox that built everything up
+> to `c5894a8` was reset mid-phase: `/opt/rust` (the toolchain) and
+> `/home/user/.cargo-vendor` (the offline crate source) lived *outside* the
+> repository, so they did not survive, and `static.rust-lang.org` is unreachable
+> from here. Nothing in this phase has been compiled, tested, linted or formatted.
+> The last commit where `cargo test --workspace` (138 tests), `clippy -D warnings`
+> and `rustfmt --check` were green is **`c5894a8`**. The code below was reviewed by
+> hand against the signatures of `aurora-core`, `aurora-ui` and `aurora-lyrics`;
+> that is not the same thing, and it is not claimed to be.
+
+The unfinished half of the Strategy B experiment in `ARCHITECTURE.md` §9 was
+"expose the clock and the frame plan over FFI and render a lyric screen". This is
+that half, in the app core and in Compose.
+
+### What was written
+
+- **`crates/aurora-mobile/src/lyrics.rs`** — `LyricsSession`, which owns an
+  `aurora_core` `LyricDocument` plus an `aurora_ui::LyricView`. Discovery is
+  `aurora_lyrics::discover` (sidecar `.lrc`, then `<artist> - <title>.lrc` in the
+  app's lyrics folder); line-only files get `estimate_word_timing` (spec 63.3), so
+  the app always reads timed words. `to_json` emits, per line: text, translation,
+  start/end, whether it is active, a highlight strength, and per-word strengths -
+  everything Compose needs, and nothing it has to decide.
+- **`Player::open` now loads lyrics with the track** (not on the first poll: a
+  200 ms tick must not touch the disk), and `state` gained `hasLyrics`.
+- **New command `lyrics`** on the JSON surface, plus `Lyrics`/`LyricLine`/`LyricWord`
+  parsing in Kotlin.
+- **`LyricsPanel` in Compose** — dim lines, the active line larger and bold, and a
+  karaoke fill from each word's activation; `LaunchedEffect` follows the active
+  line. BiDi is Compose's shaping, not a Kotlin pass, because the strings are mixed
+  Arabic/English on purpose.
+- **Probe** prints the column the way the panel consumes it.
+
+### The tests that were written (and must be run)
+
+`lyrics.rs` adds six: sidecar discovery on the FLAC fixture, Arabic text surviving
+in logical order, active line following a published clock (none at 0 ms, line 0 at
+600 ms, line 1 at 3.1 s), word activation filling across a line, "no lyrics" listing
+what was tried, and opacity monotonicity. `facade.rs` adds two: the `lyrics`
+command end-to-end through `dispatch`, and a track without lyrics reporting its
+search paths.
+
+```bash
+cargo test -p aurora-mobile      # the first thing to run on a machine with cargo
+cargo clippy --workspace --all-targets -- -D warnings
+rustfmt --edition 2024 --check crates/*/src/*.rs crates/aurora-mobile/src/bin/*.rs
+```
+
+### Known caveats in this phase
+
+- The FLAC fixture's lyric timings are 0.5-9 s while the fixture audio is 0.17 s,
+  so live playback cannot reach line 0. The timing tests therefore drive the clock
+  directly (`PlaybackClock::publish`), which is the same seam the device uses -
+  but it means "line highlighting during real playback" is proven by unit test,
+  not by watching it.
+- The Kotlin in this phase is, like Phase 2.7's, uncompiled.

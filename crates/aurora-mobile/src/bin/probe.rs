@@ -79,6 +79,32 @@ fn main() -> std::process::ExitCode {
     let note = json(&call(handle, "outputNote", "{}"));
     println!("output: {}", note["output"].as_str().unwrap_or("?"));
 
+    // The lyric column, exactly as the Compose panel asks for it.
+    let lyrics = json(&call(handle, "lyrics", "{}"));
+    match lyrics["available"].as_bool() {
+        Some(true) => {
+            println!(
+                "lyrics: {} lines from {} (word-timed: {})",
+                lyrics["lineCount"], lyrics["source"], lyrics["wordTimed"]
+            );
+            for line in lyrics["lines"].as_array().cloned().unwrap_or_default() {
+                println!(
+                    "  [{:>6} ms] {}",
+                    line["startMs"].as_u64().unwrap_or(0),
+                    line["text"].as_str().unwrap_or("")
+                );
+            }
+            println!(
+                "  active line at this position: {}",
+                match lyrics["activeLine"].as_u64() {
+                    Some(index) => format!("#{index}"),
+                    None => "none yet (the first line starts later than the fixture is long)".to_owned(),
+                }
+            );
+        }
+        _ => println!("lyrics: none (tried {:?})", lyrics["tried"]),
+    }
+
     let started = Instant::now();
     let _ = call(handle, "play", "{}");
     // The UI polls; the clock does the interpolating.
@@ -94,6 +120,13 @@ fn main() -> std::process::ExitCode {
                 state["durationMs"].as_u64().unwrap_or(0)
             );
             last_state = name.clone();
+        }
+        // Which line is lit right now, as the panel would highlight it.
+        let singing = json(&call(handle, "lyrics", "{}"))["activeLine"].as_u64();
+        if let Some(index) = singing {
+            if samples % 5 == 0 {
+                println!("  singing line #{index}");
+            }
         }
         if samples % 5 == 0 {
             println!(

@@ -26,6 +26,84 @@ object NativePlayer {
     external fun nativeLivePlayers(): Long
 }
 
+/**
+ * One word of the active lyric line, with its highlight strength.
+ *
+ * The strength is computed in Rust by the shared view model; Compose only turns it
+ * into a colour. That is the whole point of Strategy B: no animation logic lives in
+ * Kotlin, so the phone and the desktop cannot disagree about what is lit.
+ */
+data class LyricWord(val text: String, val activation: Float)
+
+/** One line of the lyric column. */
+data class LyricLine(
+    val text: String,
+    val startMs: Long,
+    val endMs: Long,
+    val active: Boolean,
+    val activation: Float,
+    val words: List<LyricWord>,
+)
+
+/** The lyric column for the current position. */
+data class Lyrics(
+    val available: Boolean,
+    val source: String,
+    val wordTimed: Boolean,
+    val activeLine: Int?,
+    val scrollPx: Float,
+    val lines: List<LyricLine>,
+    val tried: List<String>,
+) {
+    companion object {
+        fun from(json: JSONObject): Lyrics {
+            val lines = json.optJSONArray("lines")
+            val parsed = ArrayList<LyricLine>(lines?.length() ?: 0)
+            if (lines != null) {
+                for (index in 0 until lines.length()) {
+                    val line = lines.getJSONObject(index)
+                    val words = line.optJSONArray("words")
+                    val parsedWords = ArrayList<LyricWord>(words?.length() ?: 0)
+                    if (words != null) {
+                        for (w in 0 until words.length()) {
+                            val word = words.getJSONObject(w)
+                            parsedWords.add(
+                                LyricWord(
+                                    text = word.optString("text"),
+                                    activation = word.optDouble("activation", 0.0).toFloat(),
+                                )
+                            )
+                        }
+                    }
+                    parsed.add(
+                        LyricLine(
+                            text = line.optString("text"),
+                            startMs = line.optLong("startMs"),
+                            endMs = line.optLong("endMs"),
+                            active = line.optBoolean("active", false),
+                            activation = line.optDouble("activation", 0.0).toFloat(),
+                            words = parsedWords,
+                        )
+                    )
+                }
+            }
+            val tried = ArrayList<String>()
+            json.optJSONArray("tried")?.let { array ->
+                for (index in 0 until array.length()) tried.add(array.getString(index))
+            }
+            return Lyrics(
+                available = json.optBoolean("available", false),
+                source = json.optString("source"),
+                wordTimed = json.optBoolean("wordTimed", false),
+                activeLine = if (json.isNull("activeLine")) null else json.optInt("activeLine"),
+                scrollPx = json.optDouble("scrollPx", 0.0).toFloat(),
+                lines = parsed,
+                tried = tried,
+            )
+        }
+    }
+}
+
 /** One track the scanner found. */
 data class LibraryTrack(
     val path: String,
@@ -133,6 +211,9 @@ class Player(configRoot: String, dataRoot: String, cacheRoot: String) : AutoClos
         call("setVolume", JSONObject().put("volume", volume.toDouble()))
         return state()
     }
+
+    /** The lyric column for the current position. Advances the shared scroll by one frame. */
+    fun lyrics(): Lyrics = Lyrics.from(call("lyrics"))
 
     fun scan(folder: String): List<LibraryTrack> {
         val json = call("scan", JSONObject().put("folder", folder))

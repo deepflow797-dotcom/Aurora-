@@ -263,3 +263,37 @@ without the `jni-bridge` feature, rustfmt clean.
   support, no foreground service or media notification.
 - Per the spec's Android rule, nothing here may be called "done": it is *written and
   host-verified*, pending a real device and an Android version to report.
+
+---
+
+## Phase 2.8 — lyrics in the app core — WRITTEN, NOT COMPILED (2026-11-13)
+
+> The sandbox was reset in the middle of this phase and the Rust toolchain
+> (`/opt/rust`) and vendored crates (`/home/user/.cargo-vendor`) went with it - they
+> are outside the repository, so they are not in the snapshot. `static.rust-lang.org`
+> is unreachable, so they cannot be restored. **Nothing below has been compiled.**
+> Last green commit: `c5894a8` (138 tests, clippy clean, rustfmt clean).
+
+### What was written
+
+- `crates/aurora-mobile/src/lyrics.rs`: `LyricsSession` = `LyricDocument` (from
+  `aurora_lyrics::discover`, with `estimate_word_timing` applied) + `aurora_ui::LyricView`,
+  serialised as JSON per line/word for Compose.
+- `Player::open` loads lyrics with the track; `state` reports `hasLyrics`; a new
+  `lyrics` command returns the column; `Lyrics`/`LyricLine`/`LyricWord` parsers in Kotlin.
+- `LyricsPanel` composable: dim inactive lines, larger active line, per-word karaoke
+  colour fill, auto-follow via `LaunchedEffect`.
+- Eight new tests (six in `lyrics.rs`, two in `facade.rs`), and a probe step that
+  prints the column.
+
+### Verification status
+
+- **Compiled: no. Tested: no. Linted: no. Formatted by hand.**
+- The code was checked against the real signatures of `aurora-core::lyrics`,
+  `aurora-core::clock`, `aurora-ui::{LyricView, Layout, FramePlan}` and
+  `aurora_lyrics::{discover, estimate_word_timing, Lookup}`; four mistakes were
+  caught that way (a missing import, a source-label assertion that used the enum
+  name instead of `LyricSource::label()`, a `Debug` bound needed by `expect_err`,
+  and a clippy `manual_clamp`). Compiler-only errors may remain.
+- `android/README.md` and `README.md` now point at `c5894a8` as the last fully
+  verified state rather than implying the tree is always green.

@@ -23,12 +23,14 @@
 //! so [`facade::Player::output_note`] says so and the UI shows that string.
 
 pub mod facade;
+pub mod lyrics;
 pub mod registry;
 
 #[cfg(feature = "jni-bridge")]
 pub mod jni_bridge;
 
 pub use facade::{MobileError, Player, State, TrackInfo};
+pub use lyrics::LyricsSession;
 pub use registry::{call, create, destroy, live_players};
 
 /// Version string the app displays in its about row.

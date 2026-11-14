@@ -18,6 +18,7 @@ data class UiState(
     val folder: String = "",
     val library: List<LibraryTrack> = emptyList(),
     val snapshot: Snapshot? = null,
+    val lyrics: Lyrics? = null,
     val busy: Boolean = false,
 )
 
@@ -71,8 +72,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun open(track: LibraryTrack) {
         viewModelScope.launch {
+            // `open` also loads the sidecar lyrics, so the first poll already has a
+            // column to draw.
             val snapshot = withContext(Dispatchers.IO) { player.open(track.path) }
-            _ui.value = _ui.value.copy(snapshot = snapshot)
+            val lyrics = withContext(Dispatchers.IO) { player.lyrics() }
+            _ui.value = _ui.value.copy(snapshot = snapshot, lyrics = lyrics)
             startPolling()
         }
     }
@@ -105,7 +109,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         pollJob = viewModelScope.launch {
             while (isActive) {
                 val snapshot = withContext(Dispatchers.IO) { player.state() }
-                _ui.value = _ui.value.copy(snapshot = snapshot)
+                // One extra call per tick: the lyric column needs the plan at the
+                // same instant the position is read, and both come from the same
+                // native clock.
+                val lyrics = withContext(Dispatchers.IO) { player.lyrics() }
+                _ui.value = _ui.value.copy(snapshot = snapshot, lyrics = lyrics)
                 if (!snapshot.isPlaying && snapshot.state != "playing") stopPolling()
                 delay(200)
             }

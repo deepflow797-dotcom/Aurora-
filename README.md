@@ -118,6 +118,14 @@ an encoder for any of them, and a hand-written MP3 is not a serious proposition.
 
 Rejected by name rather than guessed at: µ-law, A-law, ADPCM, IMA4, RF64.
 
+## Verification status of the tree
+
+Everything up to commit `c5894a8` is compile-verified: `cargo test --workspace`
+(138 tests), `clippy -D warnings` and `rustfmt --check` were green at that commit.
+Work after it (Phase 2.8, lyrics in the Android app core and in Compose) is
+**written but not compiled**: the sandbox lost its Rust toolchain mid-phase, and
+`PHASE_LOG.md` says exactly what to run to prove it.
+
 ## Not verified yet
 
 The development sandbox has no GPU, no Wayland compositor, no audio device and

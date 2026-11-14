@@ -26,6 +26,8 @@ use aurora_audio::{DecoderSource, PacedDevice, PlaybackEngine, SharedEngine};
 use aurora_core::clock::PlaybackClock;
 use aurora_db::{Catalog, MemoryCatalog};
 use aurora_library::{FileNameProbe, ScanReport, scan};
+
+use crate::lyrics::LyricsSession;
 use aurora_platform::dirs::XdgDirectories;
 use serde_json::{Value, json};
 
@@ -121,6 +123,10 @@ pub struct Player {
     engine: Option<SharedEngine>,
     device: Option<PacedDevice>,
     track: Option<TrackInfo>,
+    /// Lyrics for the loaded track, if a sidecar or the lyrics folder had any.
+    lyrics: Option<LyricsSession>,
+    /// Paths lyric discovery looked at, so "no lyrics" can say where it looked.
+    lyrics_tried: Vec<String>,
     volume: f32,
     /// Set once the engine reported the end of the stream.
     finished: bool,
@@ -163,6 +169,8 @@ impl Player {
             engine: None,
             device: None,
             track: None,
+            lyrics: None,
+            lyrics_tried: Vec::new(),
             volume: 1.0,
             finished: false,
             last_error: None,
@@ -220,6 +228,20 @@ impl Player {
         };
         self.engine = Some(Arc::new(Mutex::new(engine)));
         self.track = Some(info.clone());
+
+        // Lyrics are loaded with the track, not on the first frame: a 200 ms poll
+        // must never be the thing that touches the disk.
+        match crate::lyrics::load(path, &self.dirs.lyrics_dir()) {
+            Ok(session) => {
+                tracing::debug!(lines = session.line_count(), "lyrics loaded");
+                self.lyrics = Some(session);
+                self.lyrics_tried.clear();
+            }
+            Err(tried) => {
+                self.lyrics = None;
+                self.lyrics_tried = tried;
+            }
+        }
         Ok(info)
     }
 
@@ -387,6 +409,31 @@ impl Player {
             .collect())
     }
 
+    /// The lyric column for the current position, as the shared view model plans it.
+    ///
+    /// Not `#[must_use]`-only: it advances the spring scroll by one frame, which is
+    /// why the app calls it at its refresh rate rather than from a getter.
+    pub fn lyrics_json(&mut self) -> Value {
+        let snapshot = self.clock.snapshot();
+        let now = std::time::Instant::now();
+        match self.lyrics.as_mut() {
+            Some(session) => session.to_json(snapshot, now),
+            None => json!({
+                "available": false,
+                "lines": [],
+                "activeLine": null,
+                "scrollPx": 0.0,
+                "tried": self.lyrics_tried,
+            }),
+        }
+    }
+
+    /// True when the loaded track has lyrics (real or estimated words).
+    #[must_use]
+    pub fn has_lyrics(&self) -> bool {
+        self.lyrics.is_some()
+    }
+
     /// One line the app shows so nobody believes there is sound yet.
     #[must_use]
     pub fn output_note(&self) -> &'static str {
@@ -408,6 +455,7 @@ impl Player {
             "durationMs": self.duration_ms(),
             "volume": self.volume,
             "output": self.output_note(),
+            "hasLyrics": self.lyrics.is_some(),
             "track": self.track.as_ref().map(TrackInfo::to_json),
             "error": self.last_error,
         })
@@ -492,6 +540,7 @@ impl Player {
                 }))
             }
             "library" => Ok(json!({ "library": self.library()? })),
+            "lyrics" => Ok(self.lyrics_json()),
             "outputNote" => Ok(json!({ "output": self.output_note() })),
             other => Err(MobileError::UnknownMethod(other.to_owned())),
         }
@@ -499,7 +548,7 @@ impl Player {
 }
 
 /// `NN - Artist - Title` when the name says so, else the file stem.
-fn title_from_path(path: &Path) -> String {
+pub(crate) fn title_from_path(path: &Path) -> String {
     let stem = path
         .file_stem()
         .and_then(|stem| stem.to_str())
@@ -621,6 +670,51 @@ mod tests {
                 aurora_audio::DecodeError::SeekOutOfRange { .. }
             ))
         ));
+    }
+
+    #[test]
+    fn opening_a_track_with_a_sidecar_exposes_its_lyrics() {
+        let mut player = player("lyrics");
+        player.open(fixture("00 - Fixture Steps.flac")).expect("open");
+        assert!(player.has_lyrics());
+
+        // Put the clock inside the second line (starts at 3.0 s) and ask for the
+        // column the way Compose does.
+        player
+            .clock()
+            .publish(Duration::from_millis(3_200), std::time::Instant::now());
+        let lyrics = player.lyrics_json();
+        assert_eq!(lyrics["available"], true);
+        assert_eq!(lyrics["activeLine"], 1);
+        assert_eq!(lyrics["source"], "sidecar .lrc");
+        assert_eq!(lyrics["wordTimed"], true);
+        assert_eq!(lyrics["lines"].as_array().unwrap().len(), 4);
+        assert!(
+            lyrics["lines"][1]["text"]
+                .as_str()
+                .unwrap()
+                .contains("Hello Aurora")
+        );
+
+        // Through the dispatch surface too: this is what Kotlin actually calls.
+        let via_dispatch: Value =
+            serde_json::from_str(&player.dispatch("lyrics", "{}")).expect("json");
+        assert_eq!(via_dispatch["activeLine"], 1);
+    }
+
+    #[test]
+    fn a_track_without_lyrics_says_where_it_looked() {
+        let mut player = player("no-lyrics");
+        player.open(fixture("00 - Fixture Tone.wav")).expect("open");
+        assert!(!player.has_lyrics());
+        let lyrics = player.lyrics_json();
+        assert_eq!(lyrics["available"], false);
+        assert!(
+            !lyrics["tried"].as_array().unwrap().is_empty(),
+            "the app must be able to show which paths were checked"
+        );
+        let state: Value = serde_json::from_str(&player.dispatch("state", "{}")).expect("json");
+        assert_eq!(state["hasLyrics"], false);
     }
 
     #[test]

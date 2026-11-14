@@ -28,6 +28,7 @@ a Jetpack Compose screen.
 | App core (`aurora-mobile`: facade + registry) | **Works and is tested on the host** — 17 tests, including real-time playback, pause, seek, scan, JSON dispatch |
 | JNI shim | **Typechecked, never executed** — `cargo check -p aurora-mobile --features jni-bridge` passes against the vendored `jni` 0.22; no JVM exists here to run it |
 | Kotlin / Compose UI | **Written, never compiled** — no JDK and no Gradle in this sandbox |
+| Lyrics (Phase 2.8) | **Written, never compiled** — the Rust side lost its toolchain mid-phase; see the warning in `PHASE_LOG.md` |
 | Rust cross-compilation | **Not possible here** — the installed toolchain has only `x86_64-unknown-linux-gnu` std, no `rustup`, and `static.rust-lang.org` is unreachable |
 | APK | **Not built.** `scripts/android/build.sh --check` names the four missing tools |
 | Audio output | **Silent.** The timeline is real (`PacedDevice`, 480 frames every 10 ms); there is no AAudio/Oboe backend, and the screen says so |
