@@ -18,7 +18,9 @@
 //! channel mapping belong. Keeping that boundary explicit means the cpal backend
 //! will be a thin wrapper, and the engine is testable with [`NullDevice`] today.
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use aurora_core::clock::PlaybackClock;
@@ -111,6 +113,12 @@ pub struct PlaybackEngine {
     frames_delivered: u64,
     /// Frames the device has been told to expect at the position we seeked to.
     base_frames: u64,
+    /// Live linear gain, applied to every sample handed to the device.
+    ///
+    /// It lives on the engine rather than on [`DecoderSource`] because a volume
+    /// slider must not need to rebuild the source (and therefore re-open the
+    /// file) while audio is running.
+    gain: f32,
     playing: bool,
     finished: bool,
 }
@@ -136,6 +144,7 @@ impl PlaybackEngine {
             clock,
             frames_delivered: 0,
             base_frames: 0,
+            gain: 1.0,
             playing: false,
             finished: false,
         }
@@ -153,6 +162,17 @@ impl PlaybackEngine {
         self.playing = false;
         self.clock.publish(self.position(), Instant::now());
         self.clock.set_playing(false);
+    }
+
+    /// Sets the live linear gain (`1.0` = unchanged, clamped to `0.0 ..= 4.0`).
+    pub fn set_gain(&mut self, gain: f32) {
+        self.gain = gain.clamp(0.0, 4.0);
+    }
+
+    /// The live linear gain.
+    #[must_use]
+    pub fn gain(&self) -> f32 {
+        self.gain
     }
 
     /// True while the device would receive samples.
@@ -223,6 +243,11 @@ impl PlaybackEngine {
             }
         };
 
+        if self.gain != 1.0 {
+            for sample in &mut out[..written] {
+                *sample *= self.gain;
+            }
+        }
         if written < out.len() {
             self.finished = written == 0 || written < out.len();
         }
@@ -246,6 +271,106 @@ impl PlaybackEngine {
     #[must_use]
     pub fn channels(&self) -> u16 {
         self.source.channels()
+    }
+}
+
+/// An engine shared between the UI thread and a device thread.
+///
+/// A real backend owns the engine on its own thread and the UI reaches it through
+/// a command queue; this mutex is the smallest thing with the same shape, so the
+/// calls a device thread makes (`pull`) and the calls a UI makes (`play`,
+/// `pause`, `seek`) already go through the seam they will use later.
+pub type SharedEngine = Arc<Mutex<PlaybackEngine>>;
+
+/// A device stand-in that runs **in real time** on its own thread.
+///
+/// [`NullDevice`] pulls as fast as it can, which is exactly right for tests and
+/// useless for a UI: a progress bar driven by it would jump to the end instantly.
+/// `PacedDevice` sleeps between callbacks, so the position advances at the rate a
+/// sound card would produce it. Android uses this until an AAudio/Oboe backend
+/// exists, which means: **the timeline is real, the sound is not.**
+pub struct PacedDevice {
+    stop: Arc<AtomicBool>,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl std::fmt::Debug for PacedDevice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PacedDevice")
+            .field("running", &self.is_running())
+            .finish_non_exhaustive()
+    }
+}
+
+impl PacedDevice {
+    /// Starts a thread that pulls `frames_per_tick` frames every `period`.
+    ///
+    /// The thread returns on its own once the engine stops playing or reaches the
+    /// end of the stream, so a paused player does not keep a thread warm.
+    #[must_use]
+    pub fn spawn(engine: SharedEngine, frames_per_tick: usize, period: Duration) -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let thread_stop = Arc::clone(&stop);
+        let handle = std::thread::Builder::new()
+            .name("aurora-paced-device".to_owned())
+            .spawn(move || {
+                let channels = {
+                    let engine = engine.lock().unwrap_or_else(|e| e.into_inner());
+                    usize::from(engine.channels().max(1))
+                };
+                let mut buffer = vec![0.0_f32; frames_per_tick.max(1) * channels];
+                let mut deadline = Instant::now();
+                while !thread_stop.load(Ordering::Relaxed) {
+                    let keep_going = {
+                        let mut engine = engine.lock().unwrap_or_else(|e| e.into_inner());
+                        match engine.pull(&mut buffer, Instant::now()) {
+                            Ok(_) => engine.is_playing() && !engine.is_finished(),
+                            // A broken decoder must not spin the thread: the
+                            // engine has already stopped itself.
+                            Err(_) => false,
+                        }
+                    };
+                    if !keep_going {
+                        break;
+                    }
+                    deadline += period;
+                    let now = Instant::now();
+                    if deadline > now {
+                        std::thread::sleep(deadline - now);
+                    } else {
+                        // We fell behind (a suspended process, a busy phone). Do
+                        // not accumulate a backlog of catch-up callbacks.
+                        deadline = now;
+                    }
+                }
+            })
+            .expect("spawn the paced device thread");
+        Self {
+            stop,
+            handle: Some(handle),
+        }
+    }
+
+    /// True while the device thread is alive.
+    #[must_use]
+    pub fn is_running(&self) -> bool {
+        self.handle
+            .as_ref()
+            .is_some_and(|handle| !handle.is_finished())
+    }
+
+    /// Asks the thread to stop and waits for it.
+    pub fn stop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+impl Drop for PacedDevice {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
@@ -375,6 +500,49 @@ mod tests {
     }
 
     #[test]
+    fn a_paced_device_advances_in_real_time() {
+        let decoder = crate::open(&fixture("00 - Fixture Tone.wav")).expect("open");
+        let clock = Arc::new(PlaybackClock::new());
+        let engine: SharedEngine = Arc::new(Mutex::new(PlaybackEngine::new(
+            Box::new(DecoderSource::new(decoder, 1.0)),
+            clock,
+        )));
+        engine.lock().unwrap_or_else(|e| e.into_inner()).play();
+
+        let started = Instant::now();
+        let mut device = PacedDevice::spawn(engine.clone(), 48, Duration::from_millis(5));
+        // The fixture is 50 ms long; wait for the thread to run itself out.
+        while device.is_running() && started.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let elapsed = started.elapsed();
+        let position = engine.lock().unwrap_or_else(|e| e.into_inner()).position();
+
+        assert_eq!(position, Duration::from_millis(50));
+        // Ten callbacks of 5 ms: the lower bound is the assertion that matters -
+        // a device that ignores wall time finishes in microseconds.
+        assert!(
+            elapsed >= Duration::from_millis(45),
+            "the paced device returned in {elapsed:?}, which is not real time"
+        );
+        assert!(elapsed < Duration::from_secs(2), "{elapsed:?}");
+        device.stop();
+    }
+
+    #[test]
+    fn stopping_a_paced_device_ends_its_thread() {
+        let (mut engine, _clock) = engine_for("00 - Fixture Steps.flac");
+        engine.play();
+        let engine: SharedEngine = Arc::new(Mutex::new(engine));
+        let mut device = PacedDevice::spawn(engine, 480, Duration::from_millis(20));
+        std::thread::sleep(Duration::from_millis(10));
+        device.stop();
+        assert!(!device.is_running());
+        // Dropping must be safe too, even after an explicit stop.
+        drop(device);
+    }
+
+    #[test]
     fn volume_scales_the_samples() {
         let decoder = crate::open(&fixture("00 - Fixture Steps.flac")).expect("open");
         let clock = Arc::new(PlaybackClock::new());
@@ -383,6 +551,22 @@ mod tests {
         let mut buffer = vec![0.0_f32; 64];
         engine.pull(&mut buffer, Instant::now()).expect("pull");
         assert!((buffer[0] - 0.125).abs() < 1e-6, "{}", buffer[0]);
+    }
+
+    #[test]
+    fn the_engine_gain_changes_mid_stream() {
+        let (mut engine, _clock) = engine_for("00 - Fixture Steps.flac");
+        engine.set_gain(0.5);
+        engine.play();
+        let mut buffer = vec![0.0_f32; 64];
+        engine.pull(&mut buffer, Instant::now()).expect("pull");
+        assert!((buffer[0] - 0.125).abs() < 1e-6, "{}", buffer[0]);
+        engine.set_gain(2.0);
+        engine.pull(&mut buffer, Instant::now()).expect("pull");
+        assert!((buffer[0] - 0.5).abs() < 1e-6, "{}", buffer[0]);
+        assert_eq!(engine.gain(), 2.0);
+        engine.set_gain(99.0);
+        assert_eq!(engine.gain(), 4.0);
     }
 
     #[test]

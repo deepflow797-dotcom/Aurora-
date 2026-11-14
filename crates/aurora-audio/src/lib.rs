@@ -19,7 +19,9 @@ pub mod error;
 pub mod symphonia_decoder;
 pub mod wav;
 
-pub use engine::{AudioSource, DecoderSource, NullDevice, PlaybackEngine};
+pub use engine::{
+    AudioSource, DecoderSource, NullDevice, PacedDevice, PlaybackEngine, SharedEngine,
+};
 
 pub use aiff::AiffDecoder;
 pub use error::DecodeError;

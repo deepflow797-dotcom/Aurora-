@@ -85,6 +85,15 @@ sub-directory. Two constraints are baked into the pinned feature list:
   `built` → more. The fixture is therefore hand-written by
   `scripts/fixtures/make-flac.py` instead.
 
+### Android bridge crates (jni)
+
+`crates/aurora-mobile` needs `jni` for the Android bridge. The offline mirror
+carries `jni-0.22.4`, `jni-macros`, `jni-sys`, `jni-sys-macros`, `simd_cesu8` and
+`combine`, so `python3 scripts/vendor/vendor.py .` resolved them without touching
+`GIT_SOURCES` — no `fetch-tag` was needed. `cargo check -p aurora-mobile
+--features jni-bridge` is what proves the bridge compiles; there is no JVM here to
+run it.
+
 ### iced 0.14 offline recipe
 
 ```toml

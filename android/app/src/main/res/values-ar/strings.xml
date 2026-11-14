@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Arabic is a first-class language for this player, not a later port. -->
+    <string name="app_name">أورورا</string>
+    <string name="library_hint">مجلد الموسيقى</string>
+    <string name="scan">فحص</string>
+    <string name="play">تشغيل</string>
+    <string name="pause">إيقاف مؤقت</string>
+    <string name="nothing_loaded">لا توجد مقطوعة محمّلة</string>
+    <string name="simulated_output">خرج محاكى - لا توجد خلفية صوت في هذه النسخة</string>
+</resources>

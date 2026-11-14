@@ -1,0 +1,37 @@
+[package]
+name = "aurora-mobile"
+description = "Android-facing app core: a JSON dispatch facade over the same engine the desktop shell uses"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# `cdylib` is what Gradle packages into `jniLibs/<abi>/libaurora_mobile.so`;
+# `rlib` is what the host tests and the probe binary link against.
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "aurora-mobile-probe"
+path = "src/bin/probe.rs"
+
+[dependencies]
+aurora-core.workspace = true
+aurora-audio.workspace = true
+aurora-db.workspace = true
+aurora-library.workspace = true
+aurora-platform.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+# Android's JNI, vendored from the offline mirror. Optional so the crate (and
+# every host test) builds without it: the bridge needs an NDK, the facade does
+# not. `cargo check -p aurora-mobile --features jni-bridge` still typechecks the
+# bridge on Linux, which is the strongest verification available here.
+jni = { version = "0.22", optional = true }
+
+[features]
+default = []
+jni-bridge = ["dep:jni"]

@@ -90,8 +90,13 @@ Logging goes to stderr at `AURORA_LOG` level (`error|warn|info|debug|trace`);
 - **Tags:** `lofty` (pure Rust).
 - **Lyrics:** in-repo parsers — plain LRC, enhanced LRC, internal JSON; TTML
   planned; estimated word timing for line-only files.
-- **Android:** shared Rust core + UniFFI + Jetpack Compose (Strategy B),
-  provisional until measured on a device.
+- **Android:** shared Rust core + Jetpack Compose (Strategy B). `crates/aurora-mobile`
+  is the app core (JSON façade + handle registry, tested on the host) and
+  `android/` is the Compose app. FFI is hand-written JSON rather than UniFFI
+  because UniFFI cannot be vendored offline. **No APK has been built and nothing
+  has run on a device**: this machine has no JDK, NDK or Android std — see
+  `android/README.md`, which also lists exactly what to run first on a machine
+  that has them.
 
 ## Format support
 

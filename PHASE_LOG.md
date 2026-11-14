@@ -450,3 +450,91 @@ through both decoders and compares every sample.
   (no encoder here writes AIFF-C); the compressed AIFF-C families stay
   unimplemented **and are reported by name**.
 - Still no audible output, no resampling, no channel mapping, no queue/gapless.
+
+---
+
+## Phase 2.7 — Android app shell (2026-11-13)
+
+The spec puts Android *after* the desktop app is stable (§63.9); building it now is
+a deliberate scope decision, not the plan's order. What it buys: the portability
+rules of §63.9 stop being aspirational, because something outside the desktop
+binary now links the core crates and exercises them.
+
+### What is actually here
+
+| Layer | File | Verified how |
+| --- | --- | --- |
+| `Player` façade (open/play/pause/seek/volume/scan/state, JSON in and out) | `crates/aurora-mobile/src/facade.rs` | 17 host tests |
+| `i64` handle registry, no handle reuse, stale-handle errors | `crates/aurora-mobile/src/registry.rs` | 5 host tests |
+| four JNI entry points | `crates/aurora-mobile/src/jni_bridge.rs` | `cargo check --features jni-bridge` (typechecked, **never run**) |
+| real-time paced device | `crates/aurora-audio/src/engine.rs` (`PacedDevice`) | 3 host tests, including a wall-clock assertion |
+| Compose app: folder, library, transport, volume, Arabic strings | `android/app/src/main/**` | **not compiled** (no JDK/Gradle) |
+| build recipe with precondition checks | `scripts/android/build.sh` | `--check` run, names all four missing tools |
+
+### Measured here
+
+The Kotlin activity does four things: create, scan, open+play, poll. The probe
+binary does the same four through the same functions, so the app core is exercised
+even though the app is not:
+
+```text
+$ cargo run -q -p aurora-mobile --bin aurora-mobile-probe -- fixtures/music
+native handle: 1
+scan: visited 3 added 3 skipped 0
+  library: "Fixture Steps" ("fLaC")
+  library: "Fixture Tone" ("AIFF")
+  library: "Fixture Tone" ("WAVE")
+open: "Fixture Steps" - 170 ms, 48000 Hz, 1 channel(s)
+output: simulated output: this build has no audio device backend
+state -> playing at 0 ms of 170 ms
+  poll: 0 ms  [........................]
+state -> finished at 170 ms of 170 ms
+paused at 60 ms, still 60 ms after 250 ms of waiting (state paused)
+seek to 20 ms landed at 20 ms
+live players after destroy: 1
+live players now: 0
+```
+
+The cdylib itself is checked too: the host build of the same source exports the
+four names Kotlin will look up, which is the one JNI failure mode that can be
+verified without a JVM.
+
+```text
+$ nm -D --defined-only target/debug/libaurora_mobile.so | grep Java_
+T Java_app_aurora_player_NativePlayer_nativeCall
+T Java_app_aurora_player_NativePlayer_nativeCreate
+T Java_app_aurora_player_NativePlayer_nativeDestroy
+T Java_app_aurora_player_NativePlayer_nativeLivePlayers
+```
+
+`cargo test --workspace`: **138 tests** (was 118), clippy `-D warnings` clean with
+and without `--features jni-bridge`, rustfmt clean.
+
+### Decisions worth recording
+
+- **JSON façade instead of UniFFI.** UniFFI and its template/proc-macro stack
+  cannot be vendored offline. The surface kept is the one UniFFI would generate -
+  `(method, args) -> json` - with every decision in plain, tested Rust and the JNI
+  layer reduced to four string-moving functions.
+- **`PacedDevice` rather than pretending.** With no AAudio/Oboe backend the honest
+  choices were "no timeline" or "a real-time timeline with no sound". The second
+  makes the clock, the UI and the future lyrics view work today, and the screen
+  prints `simulated output: this build has no audio device backend`.
+- **`XdgDirectories::new(config, data, cache)`** already existed for tests, so the
+  Android side needed no new directory abstraction: Kotlin passes `Context.filesDir`
+  roots and the same type serves both platforms.
+- **`jni` 0.22.4 came from the offline mirror**, so the bridge is written against a
+  maintained crate instead of hand-rolled `JNIEnv` vtable pointer arithmetic - the
+  kind of unsafe code that cannot be verified without a JVM.
+
+### Not done / not verified
+
+- **No APK, no device, no emulator.** No JDK, no Android SDK/NDK, and the toolchain
+  ships only `x86_64-unknown-linux-gnu` std, so `cargo ndk` cannot even start.
+- **The Kotlin has never been compiled.** Expect a round of import/typo fixes on the
+  first `./gradlew assembleDebug`.
+- **No sound.** AAudio/Oboe is as unobtainable here as ALSA/`cpal`.
+- **No MediaStore/scoped-storage access**: the scanner walks a path the app can
+  read. `content://` URIs are the `StorageBackend` seam, not yet implemented.
+- **No foreground service, media notification or audio focus** - Kotlin glue that
+  only makes sense once there is real audio.

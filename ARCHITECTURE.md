@@ -293,7 +293,7 @@ Android-visible abstractions, all in `aurora-core`:
 | --- | --- | --- | --- |
 | Audio out | `AudioOutput` | CPAL/PipeWire | AAudio/Oboe impl `[planned]` |
 | Files | `StorageBackend` (`read`, `walk_audio`, `sibling_lrc`, `exists`) | `PathStorage` | content-URI storage `[planned]` |
-| Dirs | `AppDirectories` | XDG paths | app-private dirs `[planned]` |
+| Dirs | `AppDirectories` | XDG paths | app-private dirs — `XdgDirectories::new(config, data, cache)` with `Context.filesDir` roots, **implemented** |
 | Library | `Probe` | `FileNameProbe`, then `LoftyProbe` | same (pure Rust) |
 
 Core state is input-agnostic: every interaction has a touch equivalent (tap a
@@ -314,14 +314,40 @@ enums, not mouse/keyboard events.
   is not reimplemented, it is driven from Rust.
 
 **Recommendation: Strategy B**, contingent on one Phase 2–3 experiment (expose
-`PlaybackClock` + `FramePlan` over UniFFI and render a lyric screen in Compose
+`PlaybackClock` + `FramePlan` over FFI and render a lyric screen in Compose
 on a real device). Strategy A remains open only if iced publishes a maintained
 Android backend.
+
+### Strategy B, as built (Phase 2.7)
+
+`crates/aurora-mobile` + `android/` are the first half of that experiment; see
+`android/README.md` for the status table. The three layers:
+
+| Layer | Where | Tested how |
+| --- | --- | --- |
+| `Player` façade: open/play/pause/seek/volume/scan/state, all JSON | `crates/aurora-mobile/src/facade.rs` | 17 host tests, including real-time playback over `PacedDevice` |
+| `i64` handle registry (`create`/`call`/`destroy`, no handle reuse) | `crates/aurora-mobile/src/registry.rs` | 5 host tests, including stale handles |
+| four `extern "system"` JNI functions | `crates/aurora-mobile/src/jni_bridge.rs` | typechecked with `--features jni-bridge`; **never executed** (no JVM) |
+| Kotlin/Compose UI, view model, permissions, Arabic strings | `android/app/src/main/…` | **not compiled** (no JDK/Gradle here) |
+
+Two deliberate deviations from the original plan, both recorded:
+
+1. **FFI is hand-written JSON, not UniFFI.** UniFFI's crates cannot be vendored
+   offline; the `(method, args) -> json` surface is the same shape and keeps every
+   decision in tested Rust. Switching to UniFFI later replaces the marshalling
+   only.
+2. **`aurora-audio` gained `PacedDevice`.** With no AAudio/Oboe backend, the
+   alternative to a paced device is a progress bar that lies. `PacedDevice` runs
+   the real engine on a thread at real time, so the clock, the UI and the lyrics
+   are exercised exactly as they will be once sound exists.
 
 ### What was *not* done here (honest reporting)
 
 - No Android SDK/NDK, no emulator and no physical device exist in this
-  environment: no Android build or run was attempted, and none is claimed.
+  environment, and the installed Rust toolchain has only `x86_64-unknown-linux-gnu`
+  std: no APK was built and nothing ran on a device. What *is* claimed is narrower
+  and checked: the app core works on the host (138 workspace tests), the JNI layer
+  typechecks, and `scripts/android/build.sh --check` names the missing tools.
 - No Wayland compositor, no GPU/DRM node, no PipeWire/ALSA device: the spike ran
   headless with a software rasterizer. The "run under a Wayland session on
   Fedora" requirement of 63.5 is therefore **not** satisfied yet; it is the

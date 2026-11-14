@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Aurora</string>
+    <string name="library_hint">Music folder</string>
+    <string name="scan">Scan</string>
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
+    <string name="nothing_loaded">No track loaded</string>
+    <string name="simulated_output">Simulated output - no audio device backend in this build</string>
+</resources>

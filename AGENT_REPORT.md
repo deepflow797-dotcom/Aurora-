@@ -216,3 +216,50 @@ and `AiffDecoder` and compares every sample to within 1e-7.
   error instead.
 - Still no audible output (no ALSA/`cpal`), no resampling, no channel mapping, no
   queue, no gapless hand-off.
+
+---
+
+## Phase 2.7 — Android app shell — BUILT, NOT RUN ON A DEVICE (2026-11-13)
+
+### What works (verified by running it)
+
+- `crates/aurora-mobile`: a `Player` façade over the same decoders, engine and
+  scanner the desktop binary uses, reachable either as Rust methods or as one JSON
+  `dispatch(method, args)` call; plus an `i64` handle registry so Kotlin can hold a
+  player without owning a Rust object.
+- `PacedDevice` in `aurora-audio`: the engine runs on its own thread and pulls 480
+  frames every 10 ms, so positions advance at wall-clock speed. Tested with a real
+  elapsed-time assertion.
+- 22 new tests (17 façade + 5 registry, plus 3 engine tests), including: real-time
+  play to `finished`, pause freezing the position, seek landing, restart-after-end,
+  live volume reaching the engine, scanning the fixture folder, JSON errors for
+  unknown methods/bad arguments/stale handles, and handle non-reuse.
+- `aurora-mobile-probe` prints the exact sequence the Kotlin view model performs.
+  Latest run is quoted in `PHASE_LOG.md`.
+
+```text
+$ cargo check -p aurora-mobile --features jni-bridge   # the JNI layer compiles
+$ nm -D target/debug/libaurora_mobile.so | grep Java_  # the symbols Kotlin links
+  T Java_app_aurora_player_NativePlayer_nativeCall
+  T Java_app_aurora_player_NativePlayer_nativeCreate
+  T Java_app_aurora_player_NativePlayer_nativeDestroy
+  T Java_app_aurora_player_NativePlayer_nativeLivePlayers
+$ bash scripts/android/build.sh --check
+  MISSING rustup / cargo-ndk / NDK / java 17 / aarch64 target
+```
+
+`cargo test --workspace`: **138 tests**, clippy `-D warnings` clean with and
+without the `jni-bridge` feature, rustfmt clean.
+
+### What does not work / is not verified
+
+- **No APK exists.** No JDK, no Android SDK/NDK, and no `aarch64-linux-android`
+  std in this toolchain; `scripts/android/build.sh` refuses with a list of what is
+  missing instead of failing halfway.
+- **The JNI functions have never been executed** - they are typechecked against
+  `jni` 0.22.4 and covered indirectly by registry tests, nothing more.
+- **The Kotlin/Compose sources have never been compiled.**
+- **No audio output on Android** (no AAudio/Oboe), no MediaStore/`content://`
+  support, no foreground service or media notification.
+- Per the spec's Android rule, nothing here may be called "done": it is *written and
+  host-verified*, pending a real device and an Android version to report.
