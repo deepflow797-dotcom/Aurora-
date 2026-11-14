@@ -85,6 +85,7 @@ This is a deliberate, documented deviation, not an oversight.
 | `app/src/main/java/app/aurora/player/PlayerViewModel.kt` | all JNI calls on `Dispatchers.IO`, the 200 ms poll, `onCleared` closes the handle |
 | `app/src/main/java/app/aurora/player/MainActivity.kt` | Compose screen: folder, library, transport, volume, the "simulated output" notice |
 | `app/src/main/res/values-ar/strings.xml` | Arabic strings; the app is BiDi-correct from the first commit |
+| `app/src/main/res/mipmap-*/ic_launcher.png` | the icon, drawn by `scripts/android/make-icon.py` (pure-Python PNG writer: no Pillow here) |
 | `../scripts/android/build.sh` | the reproducible build recipe, with precondition checks |
 
 ## Known gaps
