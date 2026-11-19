@@ -179,9 +179,9 @@ fun KaraokeLine(
     Canvas(modifier = modifier.fillMaxWidth().height(heightDp)) {
         if (words.isEmpty()) return@Canvas
 
-        val spaceWidth = textMeasurer.measureText(" ", style).size.width.toFloat()
+        val spaceWidth = textMeasurer.measure(" ", style).size.width.toFloat()
         val measured = words.map { word ->
-            word to textMeasurer.measureText(word.text, style).size.width.toFloat()
+            word to textMeasurer.measure(word.text, style).size.width.toFloat()
         }
         val totalWidth = measured.sumOf { it.second.toDouble() }.toFloat() +
             spaceWidth * (measured.size - 1).coerceAtLeast(0)
