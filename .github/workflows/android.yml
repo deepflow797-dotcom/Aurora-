@@ -157,6 +157,24 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           exit $code
 
+      # Surface Gradle/Kotlin errors as annotations: full job logs
+      # cannot be downloaded from the agent sandbox (the log host is
+      # unreachable there — EOF, the same issue the user reported),
+      # but annotations ARE readable via the GitHub API.
+      - name: Annotate Gradle errors (from assemble log)
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ ! -f /tmp/assemble-debug.log ]; then echo "no assemble log"; exit 0; fi
+          grep -E "^e: |^w: |error:|FAILED|What went wrong|Execution failed|Exception|Caused by:" /tmp/assemble-debug.log \
+            | head -n 50 \
+            | while IFS= read -r line; do
+                msg=$(printf '%s' "$line" | sed 's/::/:/g' | cut -c1-500)
+                echo "::error::$msg"
+              done
+          echo "--- last 30 lines ---"
+          tail -n 30 /tmp/assemble-debug.log
+
       - name: Assemble release APK (informational)
         continue-on-error: true
         working-directory: android
