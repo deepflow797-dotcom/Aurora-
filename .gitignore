@@ -1,0 +1,19 @@
+# Rust build artefacts
+/target
+/spikes/*/target
+# Spike run output (regenerate with the commands in spikes/ui-spike/README.md);
+# the evidence that backs the Phase 0 decision is committed under evidence/.
+/spikes/*/out
+*.png.tmp
+__pycache__/
+*.pyc
+
+# Android build products (the Rust .so files are built by scripts/android/build.sh
+# and staged here; they are artefacts, not sources).
+/android/app/src/main/jniLibs/
+/android/app/build/
+/android/build/
+/android/.gradle/
+/android/local.properties
+*.apk
+*.aab

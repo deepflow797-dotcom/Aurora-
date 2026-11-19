@@ -1,0 +1,18 @@
+{
+  "candidate": "egui",
+  "width": 1280,
+  "height": 800,
+  "target_fps": 60,
+  "seconds": 60.0,
+  "frames": 3569,
+  "wall_seconds": 60.002,
+  "measured_fps": 59.48,
+  "render_ms": { "mean": 4.061, "p50": 4.005, "p95": 5.376, "p99": 6.045, "max": 9.299 },
+  "frame_ms": { "mean": 16.787, "p50": 16.779, "p95": 16.830, "p99": 16.855, "max": 17.639 },
+  "cpu_seconds": 14.680,
+  "cpu_percent_one_core": 24.5,
+  "cpu_ms_per_frame": 4.113,
+  "rss_peak_mib": 29.0,
+  "gpu_percent": null,
+  "gpu_note": "no GPU device / no DRM node in this container; software rasterizer only"
+}

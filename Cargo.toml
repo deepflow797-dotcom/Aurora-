@@ -1,0 +1,53 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/aurora-core",
+    "crates/aurora-audio",
+    "crates/aurora-lyrics",
+    "crates/aurora-library",
+    "crates/aurora-db",
+    "crates/aurora-ui",
+    "crates/aurora-platform",
+    "crates/aurora-app",
+    "crates/aurora-mobile",
+]
+# The Phase 0 UI spike lives in its own workspace: it pulls in iced/egui, which
+# must never become a dependency of the shipping crates (see ARCHITECTURE.md).
+exclude = ["spikes/ui-spike"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+aurora-core = { path = "crates/aurora-core" }
+aurora-audio = { path = "crates/aurora-audio" }
+aurora-lyrics = { path = "crates/aurora-lyrics" }
+aurora-library = { path = "crates/aurora-library" }
+aurora-db = { path = "crates/aurora-db" }
+aurora-ui = { path = "crates/aurora-ui" }
+aurora-platform = { path = "crates/aurora-platform" }
+aurora-mobile = { path = "crates/aurora-mobile" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+toml = "0.9"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+# Decoders. Feature list is deliberately explicit: every enabled codec pulls a
+# crate from the vendored Symphonia workspace, and the sandbox cannot fetch any.
+symphonia = { version = "0.5", default-features = false, features = [
+    # `wav`/`aiff` are deliberately absent: they pull symphonia-format-riff,
+    # which depends on the `extended` crate (not obtainable offline). WAV is
+    # covered by aurora-audio's own decoder instead.
+    "pcm",
+    "flac",
+    "mp3",
+    "aac",
+    "alac",
+    "isomp4",
+    "caf",
+] }

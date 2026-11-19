@@ -1,0 +1,26 @@
+# Standalone workspace: the spike must never become a dependency of the app.
+[workspace]
+
+[package]
+name = "aurora-ui-spike"
+description = "Phase 0 headless UI benchmark: iced (tiny-skia) vs egui (epaint)"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+aurora-core = { path = "../../crates/aurora-core" }
+aurora-lyrics = { path = "../../crates/aurora-lyrics" }
+aurora-ui = { path = "../../crates/aurora-ui" }
+# The iced candidate: iced's own tiny-skia renderer, driven headlessly.
+iced_tiny_skia = { version = "0.14", default-features = false, features = ["geometry", "wayland"] }
+# The egui candidate: immediate-mode UI, tessellated then rasterized here.
+egui = { version = "0.37", default-features = false, features = ["default_fonts"] }
+# Shared rasterizer (tiny-skia 0.11 is what iced_tiny_skia draws through).
+tiny-skia = { version = "0.11", default-features = false, features = ["std", "simd"] }
+cosmic-text = { version = "0.19", default-features = false, features = ["swash", "std"] }
+png = "0.17"
+
+[profile.release]
+opt-level = 3
+debug = false

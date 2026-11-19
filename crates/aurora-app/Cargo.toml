@@ -1,0 +1,41 @@
+[package]
+name = "aurora-app"
+description = "Aurora Player binary"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "aurora"
+path = "src/main.rs"
+
+[dependencies]
+aurora-core = { workspace = true }
+aurora-audio = { workspace = true }
+aurora-lyrics = { workspace = true }
+aurora-library = { workspace = true }
+aurora-db = { workspace = true }
+aurora-ui = { workspace = true }
+aurora-platform = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+# The UI toolkit is confined to this crate: no engine crate may depend on iced
+# (ARCHITECTURE.md rule 2). Feature set is the one verified offline in
+# scripts/README.md - tiny-skia, Wayland, no wgpu, no X11.
+iced = { version = "0.14", default-features = false, features = [
+    "advanced",
+    "tiny-skia",
+    "wayland",
+    "advanced-shaping",
+    "crisp",
+    "linux-theme-detection",
+    "thread-pool",
+] }
+
+[dev-dependencies]
+# Headless rendering of the shell for the layout test (src/shot.rs). Both crates
+# are already in the iced tree; this only makes them importable from the test.
+iced_runtime = "0.14"
+tiny-skia = "0.11"
