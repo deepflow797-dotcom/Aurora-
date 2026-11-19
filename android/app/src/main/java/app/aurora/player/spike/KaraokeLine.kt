@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -153,6 +154,7 @@ fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBlurredWord(
  * at poll rate — smooth per-frame interpolation is a later optimisation
  * (see BLUR_REBUILD.md), not faked here.
  */
+@OptIn(ExperimentalTextApi::class)
 @Composable
 fun KaraokeLine(
     words: List<LyricWord>,
@@ -170,7 +172,9 @@ fun KaraokeLine(
         TextStyle(fontSize = fontSize, fontWeight = fontWeight, color = color)
     }
     val paint = remember { Paint().apply { isAntiAlias = true } }
-    val heightDp = with(density) { fontSize.toDp() * 1.5f }
+    // TextUnit.value is the sp amount; using it as dp keeps the line
+    // height proportional to the font size without a Density conversion.
+    val heightDp = (fontSize.value * 1.5f).dp
 
     Canvas(modifier = modifier.fillMaxWidth().height(heightDp)) {
         if (words.isEmpty()) return@Canvas
