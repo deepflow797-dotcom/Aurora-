@@ -96,7 +96,17 @@ impl LyricsSession {
                             .find(|planned| planned.line == index && planned.word == word_index)
                             .map(|planned| planned.activation)
                             .unwrap_or(0.0);
-                        json!({ "text": &word.text, "activation": activation })
+                        json!({
+                            "text": &word.text,
+                            "activation": activation,
+                            // Word-level blur (KaraokeLine / AuroraLyricPreviewBox)
+                            // needs the singing window, not just the fade-in
+                            // activation: blurProgress = (now - start) / (end - start).
+                            // Sent since the word-blur rebuild; older Kotlin
+                            // parsers ignore unknown fields, so this is additive.
+                            "startMs": word.start.0,
+                            "endMs": word.end.0,
+                        })
                     })
                     .collect();
                 let activation = if is_active {
@@ -261,6 +271,42 @@ mod tests {
         let tried = load(&fixture("00 - Fixture Tone.wav"), &lyrics_dir()).expect_err("no lyrics");
         assert!(!tried.is_empty(), "{tried:?}");
         assert!(tried.iter().any(|path| path.ends_with(".lrc")));
+    }
+
+    #[test]
+    fn word_timings_are_sent_to_the_ui_for_the_blur_effect() {
+        // KaraokeLine / AuroraLyricPreviewBox compute
+        // blurProgress = (nowMs - startMs) / (endMs - startMs) in Kotlin.
+        // That needs real per-word windows in the JSON, not only the
+        // 80 ms fade-in `activation`.
+        let mut session = load(&fixture("00 - Fixture Steps.flac"), &lyrics_dir()).expect("lyrics");
+        let clock = PlaybackClock::new();
+        clock.publish(Duration::from_millis(700), Instant::now());
+        let json = session.to_json(clock.snapshot(), Instant::now());
+
+        // Top-level position is what Kotlin uses as `nowMs` for the blur law.
+        assert_eq!(json["positionMs"], 700);
+
+        let line = &json["lines"][0];
+        let line_start = line["startMs"].as_u64().unwrap();
+        let line_end = line["endMs"].as_u64().unwrap();
+        let words = line["words"].as_array().expect("words array");
+        assert!(!words.is_empty(), "first line should have words");
+        let mut previous_end = line_start;
+        for word in words {
+            let start = word["startMs"].as_u64().expect("word startMs");
+            let end = word["endMs"].as_u64().expect("word endMs");
+            assert!(
+                start >= previous_end,
+                "words are in order: start {start} after previous end {previous_end}"
+            );
+            assert!(end > start, "word window is non-empty: {start}..{end}");
+            assert!(
+                end <= line_end,
+                "word end {end} stays inside its line (ends {line_end})"
+            );
+            previous_end = end;
+        }
     }
 
     #[test]

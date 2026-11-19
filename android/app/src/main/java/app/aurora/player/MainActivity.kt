@@ -49,6 +49,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.aurora.player.designsystem.AuroraLyricPreviewBox
+import app.aurora.player.spike.KaraokeLine
+import app.aurora.player.spike.WordBlurLaw
 
 /**
  * One screen: folder, library, transport.
@@ -196,6 +199,19 @@ fun AuroraScreen(
                 )
             }
 
+            // Mini lyric preview card under the transport controls:
+            // current line with word-level blur, next line dimmed.
+            // Tapping it scrolls the full lyric panel to the active line
+            // (the panel below is the full lyrics; there is no separate
+            // full-screen lyrics screen in this rebuilt codebase).
+            AuroraLyricPreviewBox(
+                lyrics = ui.lyrics,
+                isRtl = isRtlText(
+                    ui.lyrics?.activeLine?.let { ui.lyrics.lines.getOrNull(it)?.text }
+                        ?: ui.lyrics?.lines?.firstOrNull()?.text
+                ),
+            )
+
             LyricsPanel(ui.lyrics, Modifier.height(220.dp))
 
             // Say it on screen: the timeline is real, the sound is not.
@@ -283,15 +299,31 @@ private fun LyricsPanel(lyrics: Lyrics?, modifier: Modifier = Modifier) {
             )
             else -> LazyColumn(state = state) {
                 items(lyrics.lines) { line ->
-                    Text(
-                        text = lineText(line, MaterialTheme.colorScheme.primary),
-                        fontSize = if (line.active) 20.sp else 16.sp,
-                        fontWeight = if (line.active) FontWeight.SemiBold else FontWeight.Normal,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                    )
+                    if (line.active && line.words.isNotEmpty()) {
+                        // Active line: word-level blur (KaraokeLine law,
+                        // BLUR_MAX_PX = 14f). Each word sharpens as it is sung.
+                        KaraokeLine(
+                            words = line.words,
+                            nowMs = lyrics.positionMs,
+                            isRtl = isRtlText(line.text),
+                            fontSize = 20.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxBlurPx = WordBlurLaw.BLUR_MAX_PX,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                        )
+                    } else {
+                        Text(
+                            text = lineText(line, MaterialTheme.colorScheme.primary),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                        )
+                    }
                 }
             }
         }
@@ -316,6 +348,28 @@ private fun lineText(line: LyricLine, accent: Color): AnnotatedString = buildAnn
             append(word.text)
         }
     }
+}
+
+/**
+ * Paragraph direction of lyric [text]: true when the first strong
+ * directional character is right-to-left (Arabic/Hebrew).
+ *
+ * This is deliberately based on the lyric text, not the device locale:
+ * an Arabic song in an English UI must still lay out RTL, and an English
+ * song on an Arabic phone must stay LTR. Weak characters (spaces,
+ * punctuation, digits) are skipped, matching the Unicode bidi rule for
+ * paragraph direction. Null/empty text defaults to LTR.
+ */
+internal fun isRtlText(text: String?): Boolean {
+    if (text.isNullOrEmpty()) return false
+    for (ch in text) {
+        when (Character.getDirectionality(ch)) {
+            Character.DIRECTIONALITY_RIGHT_TO_LEFT,
+            Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC -> return true
+            Character.DIRECTIONALITY_LEFT_TO_RIGHT -> return false
+        }
+    }
+    return false
 }
 
 private fun format(ms: Long): String {

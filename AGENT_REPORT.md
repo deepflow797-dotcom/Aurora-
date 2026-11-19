@@ -297,3 +297,18 @@ without the `jni-bridge` feature, rustfmt clean.
   and a clippy `manual_clamp`). Compiler-only errors may remain.
 - `android/README.md` and `README.md` now point at `c5894a8` as the last fully
   verified state rather than implying the tree is always green.
+
+## Word-level blur rebuild (2026-11-19)
+
+See `BLUR_REBUILD.md` for the full, honest status. Summary: the modern
+glass codebase described in the handoff documents was not present in
+this repo or on GitHub, so the word-blur effect was rebuilt from the old
+branch (`arena/504adea6-aurora`) + the handoff prompt, with liquid glass
+cancelled by user decision. Implemented: Rust word timings in the lyrics
+JSON, Kotlin `KaraokeLine`/`WordBlurLaw` (14f full line, 8f mini card,
+4 stroke passes), `AuroraLyricPreviewBox` wired under the transport
+controls, browser preview `preview_blur_mini_card.html`, JVM unit tests,
+and a new GitHub Actions workflow that builds debug+release APKs as
+artifacts (lint warnings no longer fail the build). **Unverified:**
+nothing was compiled or run in this sandbox (no JDK/Gradle/Rust);
+first CI run is the real check. Audio output remains simulated.

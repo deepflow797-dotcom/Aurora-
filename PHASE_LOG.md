@@ -599,3 +599,32 @@ rustfmt --edition 2024 --check crates/*/src/*.rs crates/aurora-mobile/src/bin/*.
   but it means "line highlighting during real playback" is proven by unit test,
   not by watching it.
 - The Kotlin in this phase is, like Phase 2.7's, uncompiled.
+
+## Word-level blur rebuild (2026-11-19, branch arena/45bdc33d-aurora)
+
+User decisions: priority C (blur mini-card + CI/APK), liquid glass
+cancelled, rebuild from the old branch + handoff docs because the modern
+source was not in this repo or on GitHub. Full status: `BLUR_REBUILD.md`.
+
+Done:
+- Merged `origin/arena/504adea6-aurora` (old desktop-first codebase) into
+  this branch (fast-forward from the shared initial commit).
+- Rust: lyrics JSON now includes per-word `startMs`/`endMs`
+  (`crates/aurora-mobile/src/lyrics.rs`) + a test for it.
+- Kotlin: `LyricWord.startMs/endMs/blurProgress()`, `Lyrics.positionMs`.
+- New `spike/KaraokeLine.kt`: `WordBlurLaw` (BLUR_MAX_PX=14f,
+  WORD_BLUR_MAX_PX=8f, 4 stroke passes 5/3.5/2/0.8 with alphas
+  0.035/0.06/0.10/0.17), `drawBlurredWord()`, `KaraokeLine` composable.
+- New `designsystem/Components.kt`: `AuroraLyricPreviewBox` (mini card
+  under transport controls, next line dimmed, RTL from lyric text).
+- `MainActivity`: preview box wired in; active lyric line renders via
+  `KaraokeLine`; `isRtlText()` helper.
+- `preview_blur_mini_card.html`: browser preview with the same `blurAt()` law.
+- CI: `lint { warningsAsErrors = false; abortOnError = false }` in
+  `android/app/build.gradle.kts`; new `.github/workflows/android.yml`
+  (Rust fmt/clippy/test + Android lint/test/assembleDebug/assembleRelease,
+  APK artifacts + Release on tags); JVM `WordBlurLawTest`.
+
+Verification: **none possible in this sandbox** (no cargo/java/gradle).
+All of the above is unverified until the first CI run. Blur updates at
+the existing 200 ms poll rate on Android (stepped, not per-frame).

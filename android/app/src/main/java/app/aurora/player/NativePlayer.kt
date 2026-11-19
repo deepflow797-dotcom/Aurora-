@@ -33,7 +33,33 @@ object NativePlayer {
  * into a colour. That is the whole point of Strategy B: no animation logic lives in
  * Kotlin, so the phone and the desktop cannot disagree about what is lit.
  */
-data class LyricWord(val text: String, val activation: Float)
+data class LyricWord(
+    val text: String,
+    val activation: Float,
+    /** Singing window in ms (from Rust `TimedWord.start/end`). 0 when the
+     *  payload predates word timings — the blur law then falls back to
+     *  [activation] instead of dividing by a zero-length window. */
+    val startMs: Long = 0L,
+    val endMs: Long = 0L,
+) {
+    /**
+     * Word-level blur progress `0..1` at [nowMs]:
+     * `((nowMs - startMs) / (endMs - startMs))`, clamped.
+     *
+     * This is the single law shared by KaraokeLine (full line) and
+     * AuroraLyricPreviewBox (mini card). It is a pure function of the
+     * audio-clock position, so seeks and pauses stay correct: no UI timer
+     * is involved.
+     */
+    fun blurProgress(nowMs: Long): Float {
+        if (endMs <= startMs) {
+            // No usable window (legacy payload / estimated single word):
+            // fall back to the Rust fade-in activation.
+            return activation.coerceIn(0f, 1f)
+        }
+        return ((nowMs - startMs).toFloat() / (endMs - startMs).toFloat()).coerceIn(0f, 1f)
+    }
+}
 
 /** One line of the lyric column. */
 data class LyricLine(
@@ -54,6 +80,9 @@ data class Lyrics(
     val scrollPx: Float,
     val lines: List<LyricLine>,
     val tried: List<String>,
+    /** Audio-clock position in ms at the instant this payload was produced.
+     *  This is `nowMs` for the word-blur law. 0 when absent. */
+    val positionMs: Long = 0L,
 ) {
     companion object {
         fun from(json: JSONObject): Lyrics {
@@ -71,6 +100,8 @@ data class Lyrics(
                                 LyricWord(
                                     text = word.optString("text"),
                                     activation = word.optDouble("activation", 0.0).toFloat(),
+                                    startMs = word.optLong("startMs", 0L),
+                                    endMs = word.optLong("endMs", 0L),
                                 )
                             )
                         }
@@ -99,6 +130,7 @@ data class Lyrics(
                 scrollPx = json.optDouble("scrollPx", 0.0).toFloat(),
                 lines = parsed,
                 tried = tried,
+                positionMs = json.optLong("positionMs", 0L),
             )
         }
     }
