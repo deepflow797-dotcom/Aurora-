@@ -50,8 +50,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.aurora.player.designsystem.AuroraLyricPreviewBox
-import app.aurora.player.spike.KaraokeLine
-import app.aurora.player.spike.WordBlurLaw
 
 /**
  * One screen: folder, library, transport.
@@ -299,31 +297,19 @@ private fun LyricsPanel(lyrics: Lyrics?, modifier: Modifier = Modifier) {
             )
             else -> LazyColumn(state = state) {
                 items(lyrics.lines) { line ->
-                    if (line.active && line.words.isNotEmpty()) {
-                        // Active line: word-level blur (KaraokeLine law,
-                        // BLUR_MAX_PX = 14f). Each word sharpens as it is sung.
-                        KaraokeLine(
-                            words = line.words,
-                            nowMs = lyrics.positionMs,
-                            isRtl = isRtlText(line.text),
-                            fontSize = 20.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxBlurPx = WordBlurLaw.BLUR_MAX_PX,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                        )
-                    } else {
-                        Text(
-                            text = lineText(line, MaterialTheme.colorScheme.primary),
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Normal,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                        )
-                    }
+                    Text(
+                        text = lineText(line, MaterialTheme.colorScheme.primary),
+                        fontSize = if (line.active) 20.sp else 16.sp,
+                        fontWeight = if (line.active) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (line.active) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                    )
                 }
             }
         }
