@@ -35,8 +35,9 @@
   Each word starts blurred and faint, then sharpens as it is sung:
   <code>blurProgress = (now − wordStart) / (wordEnd − wordStart)</code>,
   <code>blurRadius = maxPx × (1 − progress)</code>, <code>alpha = progress</code>.
-  Mini card uses <code>WORD_BLUR_MAX_PX = 8</code>; the full line uses
-  <code>BLUR_MAX_PX = 14</code>. CSS <code>filter: blur()</code> here is only a
+  The effect is used <strong>only</strong> in the mini card
+  (<code>WORD_BLUR_MAX_PX = 8</code>); the full lyric panel stays plain
+  text, exactly as it ships. CSS <code>filter: blur()</code> here is only a
   browser stand-in for the Android 4-pass stroke halo — the shipped effect
   draws strokes, not a filter. Timing below is simulated (no audio clock
   in a browser); on Android, <code>now</code> is Rust's audio-clock
@@ -50,8 +51,8 @@
 </div>
 
 <div class="card">
-  <div class="label">FULL LINE (14px)</div>
-  <div class="line" id="fullLine" style="font-size:26px"></div>
+  <div class="label">FULL LYRICS PANEL · PLAIN TEXT (no blur)</div>
+  <div class="line" id="fullLine" style="font-size:22px;font-weight:600"></div>
 </div>
 
 <div class="controls">
@@ -134,7 +135,11 @@ function render() {
   const nextEl = document.getElementById('nextLine');
   nextEl.className = 'line next ' + SONGS[lang].cls;
   nextEl.textContent = next ? next.text : '';
-  renderLine(document.getElementById('fullLine'), active, 14);
+  // Full panel: plain text, no blur — the effect lives only in the card.
+  const fullEl = document.getElementById('fullLine');
+  fullEl.className = 'line ' + SONGS[lang].cls;
+  fullEl.textContent = active ? active.text : '';
+  fullEl.style.opacity = active ? '1' : '0.5';
   document.getElementById('seek').value = String(Math.round(nowMs / DURATION * 1000));
   const w0 = active ? splitWords(active)[0] : null;
   document.getElementById('lawOut').textContent = w0
