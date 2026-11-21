@@ -123,3 +123,43 @@ User decisions for this rebuild (2026-11-19):
   were attached.
 - `agon-agent-blur.zip` / `lyrics.js` / `lyrics-patch.html` — not found
   on GitHub; superseded by `preview_blur_mini_card.html` above.
+
+## Phase 5 — blur confined to the mini card (2026-11-21)
+
+Branch `arena/e40be466-aurora`, based on `main` @ `8140669`.
+
+- `MainActivity.kt` → `LyricsPanel` no longer renders the active line with
+  `KaraokeLine`; the whole full-lyrics panel is plain `Text` (active line
+  bolder/brighter, karaoke word tint kept). `KaraokeLine` / `WordBlurLaw`
+  imports dropped from the activity. `KaraokeLine.kt` itself stays as the
+  single implementation the mini card calls.
+- Result: the word-level blur now has exactly one home —
+  `AuroraLyricPreviewBox` (`android/.../designsystem/Components.kt`,
+  `WORD_BLUR_MAX_PX = 8f`) — matching the design constraint in the handoff.
+  Size, position, typography, colours and the `LYRICS` label of the card
+  are unchanged; RTL detection is unchanged.
+- `preview_blur_mini_card.html`: the `FULL LINE (14px)` panel became
+  `FULL LYRICS PANEL · PLAIN TEXT (no blur)` so the preview matches the
+  shipped screen.
+
+### CI status — correction to the handoff note
+
+The handoff described a 12-attempt fight with a Gradle
+`CachingState.fold` / `CacheBasedImmutableWorkspaceProvider` crash on
+`ubuntu-24.04`, and a `.github/workflows/ci.yml` running Gradle 8.11.1.
+None of that exists in this repository:
+
+- There is no `ci.yml`; the only workflow is `.github/workflows/android.yml`
+  (Gradle 8.9 via `gradle/actions/setup-gradle@v4`, `ubuntu-latest`).
+- Nothing in the repo references `CachingState`, `ubuntu-22.04`,
+  `--no-build-cache`, `configure-on-demand`, or Gradle 8.11/8.14.
+- Actions history shows the workflow **green** on `main`
+  (run `44602358190`) and on `arena/fe6943ef-aurora` (run `44762180370`,
+  2026-11-20), the latter with a 30 MB `aurora-apks` artifact containing
+  `app-debug.apk` + `app-release.apk`.
+
+So no CI repair was needed or attempted; the caching-crash note belongs to
+a different workspace. The green run of 2026-11-20 already covered the
+"full line off / mini card only" change, which had been left on an
+unmerged branch (`arena/fe6943ef-aurora`); Phase 5 above re-lands it on the
+current branch so `main` gets it too.
