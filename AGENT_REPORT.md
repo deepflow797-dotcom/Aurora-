@@ -312,3 +312,17 @@ and a new GitHub Actions workflow that builds debug+release APKs as
 artifacts (lint warnings no longer fail the build). **Unverified:**
 nothing was compiled or run in this sandbox (no JDK/Gradle/Rust);
 first CI run is the real check. Audio output remains simulated.
+
+## Blur confined to the mini card (2026-11-21)
+
+The full lyric panel no longer renders the active line through
+`KaraokeLine`; the effect now exists only in `AuroraLyricPreviewBox`
+(8f), per the design constraint. `preview_blur_mini_card.html` was updated
+to match (its second panel is plain text). Compile evidence: the edited
+`MainActivity.kt` is byte-identical to `f5307d5` apart from one comment,
+and that commit's Android job passed CI (run `44762180370`). No local
+JDK/Gradle, so no APK in this sandbox. **CI is currently unable to start
+any job** because GitHub refuses to allocate runners for this account
+("recent account payments have failed or your spending limit needs to be
+increased"); a minimal probe workflow failed the same way, so it is
+billing, not the workflow. Restore billing, then re-run `Android CI`.

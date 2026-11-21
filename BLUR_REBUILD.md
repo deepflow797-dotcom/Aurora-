@@ -159,7 +159,23 @@ None of that exists in this repository:
   `app-debug.apk` + `app-release.apk`.
 
 So no CI repair was needed or attempted; the caching-crash note belongs to
-a different workspace. The green run of 2026-11-20 already covered the
+a different workspace.
+
+Compile evidence for the change above: the final `MainActivity.kt` is
+byte-identical to `f5307d5` (`arena/fe6943ef-aurora`) apart from one
+comment, and that commit's Android job is green in run `44762180370`.
+
+### CI blocked again (2026-11-21, billing — not Gradle)
+
+After this branch was pushed, every job failed within two seconds with
+zero steps executed and no runner assigned. The check-run annotation
+reads: *"The job was not started because recent account payments have
+failed or your spending limit needs to be increased. Please check the
+'Billing & plans' section in your settings."* A deliberately trivial
+three-line probe workflow (`.github/workflows/probe.yml`, since removed)
+failed identically, which rules out `android.yml`, Gradle, and the code.
+Fix: **Settings → Billing & plans** (Actions minutes / payment method),
+then re-run `Android CI`; the workflow itself needs no change. The green run of 2026-11-20 already covered the
 "full line off / mini card only" change, which had been left on an
 unmerged branch (`arena/fe6943ef-aurora`); Phase 5 above re-lands it on the
 current branch so `main` gets it too.
