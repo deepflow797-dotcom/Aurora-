@@ -650,3 +650,55 @@ the existing 200 ms poll rate on Android (stepped, not per-frame).
   account payments have failed or your spending limit needs to be
   increased." GitHub Actions billing on the account must be restored
   before any new APK can be produced; see `BLUR_REBUILD.md` (Phase 5).
+
+## 2026-11-22 — first APK that actually exists (`arena/66d6f0f8-aurora`)
+
+Nothing was compiled in this sandbox (still no JDK/NDK/Gradle/Android SDK,
+and `apt` has no JDK package). The APK was produced by GitHub Actions, which
+is now **running again** — the billing block recorded on 2026-11-21 is gone:
+
+- run `45011225067` (this branch @ `8140669`) — Rust job 53 s, Android job
+  3 min 4 s, **both green**, `aurora-apks` artifact with
+  `app-debug.apk` (22.4 MB) + `app-release-unsigned.apk` (16.7 MB).
+- run `45012574027` (this branch @ `97ac32f`) — same, but with the release
+  APK signed and the version bumped: `app-debug.apk` + `app-release.apk`.
+
+What was fixed to get an installable APK:
+
+1. **Delivery.** Actions artifacts and Release assets both live in GitHub
+   blob storage, which this sandbox cannot reach (`EOF`). The workflow now
+   commits the finished APKs to `dist-apk/` on the pushed branch
+   (`Publish APKs to dist-apk/`), with `SHA256SUMS.txt` and `BUILD.txt`.
+   `.gitignore` gained an exception for that directory. The step skips
+   `main` and tag pushes so the bot commit never lands on a primary ref, and
+   marks its own commit so it cannot loop. Note: writing `[skip ci]` in a
+   *human* commit message also skips the workflow — that cost one push.
+2. **Release signing.** `assembleRelease` alone emits
+   `app-release-unsigned.apk`, which Android refuses to install, so the
+   debug-signed release APK the README and workflow promised never existed.
+   `release { signingConfig = debug }` now makes it real (run
+   `45012574027` → `app-release.apk`, real APK signature scheme v2 block).
+3. **Version.** `versionCode 2`, `versionName 0.2.0`, so this build installs
+   over any 0.1.0 build already on a phone.
+4. **The design change from PR #2 is in this build.** `arena/e40be466-aurora`
+   (blur only in the mini card) was merged in, since its own CI never got a
+   runner.
+
+Checks done here on the downloaded files (no device, so nothing was run):
+
+- both APKs contain `lib/arm64-v8a/libaurora_mobile.so` (3.06 MB) and
+  `lib/x86_64/libaurora_mobile.so` — note the CI release build excludes
+  `x86_64` unless `abiFilters` says otherwise; it is present in both;
+- `libaurora_mobile.so` exports `Java_app_aurora_player_NativePlayer_*` and
+  contains `nativeCreate`/`nativeCall`/`nativeDestroy`, i.e. it was built
+  with `--features jni-bridge`;
+- binary manifest says `app.aurora.player`, versionName `0.2.0`;
+- `app-release.apk` has a v2 signature block (debug key); `app-debug.apk`
+  has the usual v2 block; neither has v1 `META-INF/*.RSA`, which is fine on
+  API 26+ (minSdk 26);
+- `MainActivity.kt` in the built tree imports `AuroraLyricPreviewBox` and no
+  longer imports `KaraokeLine`/`WordBlurLaw`.
+
+Still not verified: nothing has been installed or run on a device or
+emulator, so "it installs, boots and shows the card" is still the user's
+first real test. Audio output remains simulated (no AAudio backend).

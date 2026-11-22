@@ -326,3 +326,23 @@ any job** because GitHub refuses to allocate runners for this account
 ("recent account payments have failed or your spending limit needs to be
 increased"); a minimal probe workflow failed the same way, so it is
 billing, not the workflow. Restore billing, then re-run `Android CI`.
+
+## First real APK (2026-11-22)
+
+There is now an APK, and it is in the repository: `dist-apk/app-debug.apk`
+and `dist-apk/app-release.apk` (22.4 / 16.7 MB, `versionName 0.2.0`,
+`versionCode 2`), published by GitHub Actions run `45012574027`.
+
+- Actions billing is working again (the 2026-11-21 block is gone); the
+  workflow was green twice today.
+- The workflow now commits its APKs to `dist-apk/` because artifacts cannot
+  be downloaded from this sandbox. Push to the branch → wait ~4 min → `git
+  pull` → new APK. Details in `PHASE_LOG.md`.
+- Fixed: the release build is now actually signed (it used to come out
+  unsigned, i.e. uninstallable), and the version was bumped so it upgrades.
+- The PR #2 design change (word blur only in the mini lyric card) is part of
+  this build.
+- Verified here only by inspecting the APK (ABIs, the real
+  `libaurora_mobile.so` with its JNI exports, manifest version, signature
+  blocks). **Never installed or run**: no device, emulator, JDK or SDK in
+  this sandbox. Audio output is still simulated.
