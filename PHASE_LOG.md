@@ -628,3 +628,25 @@ Done:
 Verification: **none possible in this sandbox** (no cargo/java/gradle).
 All of the above is unverified until the first CI run. Blur updates at
 the existing 200 ms poll rate on Android (stepped, not per-frame).
+
+## 2026-11-21 — blur confined to the mini card (`arena/e40be466-aurora`)
+
+- `MainActivity.LyricsPanel`: the full lyric panel is plain `Text` again
+  (active line bolder/brighter, karaoke word tint kept), and the
+  `KaraokeLine` / `WordBlurLaw` imports are gone. The word-level blur now
+  has exactly one home: `AuroraLyricPreviewBox`, `WORD_BLUR_MAX_PX = 8f`.
+  Card size, position, typography, colours, the `LYRICS` label and RTL
+  detection are untouched.
+- `preview_blur_mini_card.html`: the second card became the full panel in
+  plain text, so the preview no longer shows an effect the app lacks.
+- Compile evidence, not a guess: the resulting `MainActivity.kt` is
+  byte-identical to commit `f5307d5` (`arena/fe6943ef-aurora`) except for
+  one comment, and that commit's Android job passed on CI (run
+  `44762180370`, 30 MB `aurora-apks` artifact). No JDK/Gradle exists in
+  this sandbox, so no APK was built here.
+- CI blocked for a non-code reason: every job (including a three-line
+  `echo` probe workflow) now fails in ~2 s with zero steps, no runner,
+  and the check-run annotation "The job was not started because recent
+  account payments have failed or your spending limit needs to be
+  increased." GitHub Actions billing on the account must be restored
+  before any new APK can be produced; see `BLUR_REBUILD.md` (Phase 5).
