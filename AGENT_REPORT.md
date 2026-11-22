@@ -312,3 +312,37 @@ and a new GitHub Actions workflow that builds debug+release APKs as
 artifacts (lint warnings no longer fail the build). **Unverified:**
 nothing was compiled or run in this sandbox (no JDK/Gradle/Rust);
 first CI run is the real check. Audio output remains simulated.
+
+## Blur confined to the mini card (2026-11-21)
+
+The full lyric panel no longer renders the active line through
+`KaraokeLine`; the effect now exists only in `AuroraLyricPreviewBox`
+(8f), per the design constraint. `preview_blur_mini_card.html` was updated
+to match (its second panel is plain text). Compile evidence: the edited
+`MainActivity.kt` is byte-identical to `f5307d5` apart from one comment,
+and that commit's Android job passed CI (run `44762180370`). No local
+JDK/Gradle, so no APK in this sandbox. **CI is currently unable to start
+any job** because GitHub refuses to allocate runners for this account
+("recent account payments have failed or your spending limit needs to be
+increased"); a minimal probe workflow failed the same way, so it is
+billing, not the workflow. Restore billing, then re-run `Android CI`.
+
+## First real APK (2026-11-22)
+
+There is now an APK, and it is in the repository: `dist-apk/app-debug.apk`
+and `dist-apk/app-release.apk` (22.4 / 16.7 MB, `versionName 0.2.0`,
+`versionCode 2`), published by GitHub Actions run `45012574027`.
+
+- Actions billing is working again (the 2026-11-21 block is gone); the
+  workflow was green twice today.
+- The workflow now commits its APKs to `dist-apk/` because artifacts cannot
+  be downloaded from this sandbox. Push to the branch → wait ~4 min → `git
+  pull` → new APK. Details in `PHASE_LOG.md`.
+- Fixed: the release build is now actually signed (it used to come out
+  unsigned, i.e. uninstallable), and the version was bumped so it upgrades.
+- The PR #2 design change (word blur only in the mini lyric card) is part of
+  this build.
+- Verified here only by inspecting the APK (ABIs, the real
+  `libaurora_mobile.so` with its JNI exports, manifest version, signature
+  blocks). **Never installed or run**: no device, emulator, JDK or SDK in
+  this sandbox. Audio output is still simulated.

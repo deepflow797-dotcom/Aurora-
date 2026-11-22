@@ -243,6 +243,47 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+      # Commit the finished APKs back into `dist-apk/` on the pushed branch.
+      #
+      # Why: Actions artifacts can only be downloaded from GitHub's blob
+      # storage, which is unreachable from the Arena agent sandbox (EOF),
+      # and a Release attachment is the same blob storage. A git commit is
+      # the only channel that both sides can read. `dist-apk/` is therefore
+      # deliberately NOT gitignored (the `*.apk` rule in .gitignore has an
+      # exception for it). Skip on tag pushes and on `main`: a bot commit
+      # must never land on a protected/primary branch.
+      - name: Publish APKs to dist-apk/ (branch pushes only)
+        if: always() && github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') && github.ref != 'refs/heads/main'
+        run: |
+          set -eu
+          ls -la android/app/build/outputs/apk/debug/ android/app/build/outputs/apk/release/ || true
+          shopt -s nullglob
+          files=(android/app/build/outputs/apk/debug/*.apk android/app/build/outputs/apk/release/*.apk)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::warning::no APK was produced; nothing to publish"
+            exit 0
+          fi
+          mkdir -p dist-apk
+          rm -f dist-apk/*.apk
+          for f in "${files[@]}"; do
+            cp "$f" "dist-apk/$(basename "$f")"
+          done
+          ( cd dist-apk && sha256sum *.apk > SHA256SUMS.txt )
+          cat dist-apk/SHA256SUMS.txt
+          printf 'built from %s\ncommit: %s\nrun: %s\n' \
+            "$GITHUB_REF_NAME" "$GITHUB_SHA" \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            > dist-apk/BUILD.txt
+          git config user.name  "aurora-ci"
+          git config user.email "aurora-ci@users.noreply.github.com"
+          git add -f dist-apk
+          if git diff --cached --quiet; then
+            echo "dist-apk/ already up to date"
+            exit 0
+          fi
+          git commit -m "ci: publish APKs from run $GITHUB_RUN_ID [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
       - name: Attach APKs to a Release (tag pushes only)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2

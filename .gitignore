@@ -17,3 +17,7 @@ __pycache__/
 /android/local.properties
 *.apk
 *.aab
+
+# CI-published APKs live here on purpose (see .github/workflows/android.yml).
+!/dist-apk/
+!/dist-apk/*.apk

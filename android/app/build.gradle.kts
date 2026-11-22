@@ -18,8 +18,11 @@ android {
         applicationId = "app.aurora.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // Bumped for the first APK that contains the mini-card-only blur
+        // (word-blur rebuild, phase 5). A higher versionCode lets the new
+        // build install over any 0.1.0 build already on a phone.
+        versionCode = 2
+        versionName = "0.2.0"
         ndk {
             // The ABIs the Rust build script produces. arm64 is what a phone
             // needs; x86_64 is for the emulator.
@@ -27,8 +30,20 @@ android {
         }
     }
 
+    // The release build is signed with the debug keystore. That is what
+    // android/README.md and the CI workflow have always promised ("release
+    // APK, debug-signed, personal sideload") and what `assembleRelease`
+    // alone never did: without a signingConfig Gradle emits
+    // `app-release-unsigned.apk`, which Android refuses to install. A real
+    // keystore must never be committed, so this stays the personal-install
+    // path; a store build overrides it with properties.
+    signingConfigs {
+        getByName("debug")
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

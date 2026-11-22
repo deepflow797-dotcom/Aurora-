@@ -1,0 +1,2 @@
+c461a777814ea48b279dbf6d2489d5161b64a1df5208be4e350f00a38ce6a3aa  app-debug.apk
+a7b8650404fdbddedb5883cf40f13183ef9efce356e4f62f3b1687e1415cb0b7  app-release.apk
